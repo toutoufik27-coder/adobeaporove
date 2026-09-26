@@ -14,10 +14,10 @@ import { ByteLRU } from './lru.js';
 import { probe } from './memprobe.js';
 
 export const MODES = {
-  safe:         { simplify: 0.3, curve: 0.35, maxDev: 0.7, cornerAngle: 20, micro: 0.6, precision: 'adaptive', symmetry: false, topologyRepair: true, strokePreservation: true,  flattenTransforms: false, removeHidden: true, mergePaths: false, maxAreaError: 0.004, shapeMaxDev: 0.008, shapeSystematic: 0.004, shapeArea: 0.006, shapePerimeter: 0.006, regionMax: 0.005, maxSolid: 0, globalMax: 0.0005, hiddenFactor: 2 },
-  balanced:     { simplify: 0.5, curve: 0.6,  maxDev: 1.1, cornerAngle: 25, micro: 1.0, precision: 'adaptive', symmetry: false, topologyRepair: true, strokePreservation: true,  flattenTransforms: false, removeHidden: true, mergePaths: false, maxAreaError: 0.008, shapeMaxDev: 0.012, shapeSystematic: 0.006, shapeArea: 0.01,  shapePerimeter: 0.01,  regionMax: 0.01,  maxSolid: 0, globalMax: 0.001,  hiddenFactor: 3 },
-  professional: { simplify: 0.8, curve: 0.9,  maxDev: 1.6, cornerAngle: 30, micro: 1.5, precision: 'adaptive', symmetry: true,  topologyRepair: true, strokePreservation: false, flattenTransforms: false, removeHidden: true, mergePaths: true,  maxAreaError: 0.015, shapeMaxDev: 0.02,  shapeSystematic: 0.008, shapeArea: 0.015, shapePerimeter: 0.015, regionMax: 0.015, maxSolid: 2, globalMax: 0.002,  hiddenFactor: 4 },
-  aggressive:   { simplify: 1.2, curve: 1.4,  maxDev: 2.4, cornerAngle: 35, micro: 2.2, precision: 'adaptive', symmetry: true,  topologyRepair: true, strokePreservation: false, flattenTransforms: false, removeHidden: true, mergePaths: true,  maxAreaError: 0.025, shapeMaxDev: 0.03,  shapeSystematic: 0.012, shapeArea: 0.025, shapePerimeter: 0.025, regionMax: 0.025, maxSolid: 4, globalMax: 0.0035, hiddenFactor: 5 },
+  safe:         { simplify: 0.3, curve: 0.35, maxDev: 0.7, cornerAngle: 20, micro: 0.6, precision: 'adaptive', symmetry: false, topologyRepair: true, consistency: false, strokePreservation: true,  flattenTransforms: false, removeHidden: true, mergePaths: false, maxAreaError: 0.004, shapeMaxDev: 0.008, shapeSystematic: 0.004, shapeArea: 0.006, shapePerimeter: 0.006, regionMax: 0.005, maxSolid: 0, globalMax: 0.0005, hiddenFactor: 2 },
+  balanced:     { simplify: 0.5, curve: 0.6,  maxDev: 1.1, cornerAngle: 25, micro: 1.0, precision: 'adaptive', symmetry: false, topologyRepair: true, consistency: false, strokePreservation: true,  flattenTransforms: false, removeHidden: true, mergePaths: false, maxAreaError: 0.008, shapeMaxDev: 0.012, shapeSystematic: 0.006, shapeArea: 0.01,  shapePerimeter: 0.01,  regionMax: 0.01,  maxSolid: 0, globalMax: 0.001,  hiddenFactor: 3 },
+  professional: { simplify: 0.8, curve: 0.9,  maxDev: 1.6, cornerAngle: 30, micro: 1.5, precision: 'adaptive', symmetry: true,  topologyRepair: true, consistency: true, strokePreservation: false, flattenTransforms: false, removeHidden: true, mergePaths: true,  maxAreaError: 0.015, shapeMaxDev: 0.02,  shapeSystematic: 0.008, shapeArea: 0.015, shapePerimeter: 0.015, regionMax: 0.015, maxSolid: 2, globalMax: 0.002,  hiddenFactor: 4 },
+  aggressive:   { simplify: 1.2, curve: 1.4,  maxDev: 2.4, cornerAngle: 35, micro: 2.2, precision: 'adaptive', symmetry: true,  topologyRepair: true, consistency: true, strokePreservation: false, flattenTransforms: false, removeHidden: true, mergePaths: true,  maxAreaError: 0.025, shapeMaxDev: 0.03,  shapeSystematic: 0.012, shapeArea: 0.025, shapePerimeter: 0.025, regionMax: 0.025, maxSolid: 4, globalMax: 0.0035, hiddenFactor: 5 },
 };
 export const settingsFor = (mode, over = {}) => ({ mode, ...MODES[mode || 'balanced'], ...over });
 
@@ -189,7 +189,7 @@ const MAX_LOG = 4000;
 export function record(ctx, entry) {
   if (entry.accepted) { ctx.acceptedCount++; if (entry.nodes) ctx.removedNodes[entry.op] = (ctx.removedNodes[entry.op] || 0) + entry.nodes[0] - entry.nodes[1]; if (entry.el != null) noteChange(ctx, entry); }
   else if (entry.accepted === false) ctx.rejectedCount++;
-  const k = `${entry.op}|${entry.accepted ? 'accepted' : 'rejected'}`;
+  const k = `${entry.op}|${entry.accepted ? 'accepted' : entry.accepted === false ? 'rejected' : 'info'}`;
   ctx.counts[k] = (ctx.counts[k] || 0) + 1;
   if (ctx.log.length < MAX_LOG) ctx.log.push(entry);
 }

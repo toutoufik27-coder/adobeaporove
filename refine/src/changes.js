@@ -35,6 +35,7 @@ const OPS = {
   'kink repair': [REPAIR, 'geometry correction'],
   'symmetry correction': [REPAIR, 'geometry correction'],
   'restore outline': [REPAIR, 'geometry correction'],
+  'repetition consistency': [REPAIR, 'repetition consistency'],
   'set count': [REPAIR, 'geometry correction'],
   'even spacing': [REPAIR, 'geometry correction'],
 };

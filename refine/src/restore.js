@@ -44,16 +44,18 @@ export function imageError(ctx, img, view) {
   return { mean: sum / N, bad, badShare: bad / N };
 }
 
-export function snapSubpath(ctx, e, i, curImg) {
-  const { src, view, u } = ctx;
-  const sp = e.subpaths[i];
+// Where the source image puts the edge of contour i, measured along the outline's
+// normal every `stepPx` image pixels: d[k] is the signed distance (user units, outward
+// positive) from the outline to the colour transition in the image; known[k] marks
+// the samples where it could be measured (a visible edge, not covered, not ambiguous).
+function measureEdges(ctx, e, subs, i, curImg, stepPx) {
+  const { src, view } = ctx;
+  const sp = subs[i];
   const s = src.T.s, px = 1 / s;                                  // one image pixel in user units
-  const sc = e.scale || 1, inv = invert(e.ctm);
-  if (!inv) return null;
-  const P = sampleNative(sp, (0.5 * px) / sc).pts;               // local, every ~0.5 image px
-  if (P.length < 12) return null;
+  const sc = e.scale || 1;
+  const P = sampleNative(sp, (stepPx * px) / sc).pts;            // local, every stepPx image px
   const R = P.map((q) => apply(e.ctm, q));
-  const inside = makeFillTest(e, e.subpaths);
+  const inside = makeFillTest(e, subs);
   const F = labC(e.fill.rgb), n = R.length, D = 8 * px, step = 0.25 * px;
   const d = new Float32Array(n), known = new Uint8Array(n);
   const tmp = [0, 0, 0];
@@ -89,6 +91,27 @@ export function snapSubpath(ctx, e, i, curImg) {
     d[k] = best; known[k] = 1;
     R[k].nOut = nOut;
   }
+  return { P, R, d, known, n, px };
+}
+// How far an outline is from the image's edges (image pixels): mean and 90th percentile
+// of |d| over the measured samples. Blur and anti-aliasing do not move this measure
+// (the transition's midpoint is found), unlike a count of differing pixels.
+export function edgeError(ctx, e, subs, i, curImg) {
+  const { d, known, n, px } = measureEdges(ctx, e, subs, i, curImg, 1);
+  const v = [];
+  for (let k = 0; k < n; k++) if (known[k]) v.push(Math.abs(d[k]) / px);
+  v.sort((a, b) => a - b);
+  return { mean: v.reduce((a, b) => a + b, 0) / Math.max(1, v.length), p90: v.length ? v[Math.floor(0.9 * (v.length - 1))] : 0, measured: v.length, samples: n };
+}
+
+export function snapSubpath(ctx, e, i, curImg) {
+  const { src } = ctx;
+  const sp = e.subpaths[i];
+  const s = src.T.s, px = 1 / s;                                  // one image pixel in user units
+  const sc = e.scale || 1, inv = invert(e.ctm);
+  if (!inv) return null;
+  if (sampleNative(sp, (0.5 * px) / sc).pts.length < 12) return null;
+  const { R, d, known, n } = measureEdges(ctx, e, e.subpaths, i, curImg, 0.5);
   // nothing to correct?
   let moved = 0, cnt = 0;
   for (let k = 0; k < n; k++) if (known[k]) { cnt++; if (Math.abs(d[k]) > 0.6 * px) moved++; }
@@ -215,7 +238,7 @@ export function passRestore(ctx) {
         if (!sp.closed || sp.segs.length < 2) continue;
         const cand = snapSubpath(ctx, e, i, curImg);
         if (!cand) continue;
-        judge(ctx, P, e, i, cand);
+        judge(ctx, P, e, i, cand, curImg);
       }
     }
     refreshOcclusion(ctx);
@@ -231,7 +254,7 @@ export function newNeedles(cur, cand, u) {
   const a = sharp(cur), fresh = sharp(cand).filter((c) => !a.some((q) => Math.hypot(c.p[0] - q.p[0], c.p[1] - q.p[1]) <= 2 * u));
   return fresh.length ? Math.max(...fresh.map((c) => c.turn)) : 0;
 }
-function judge(ctx, P, e, i, cand) {
+function judge(ctx, P, e, i, cand, curImg) {
   const cur = e.subpaths[i], u = ctx.u / (e.scale || 1);
   const subs = e.subpaths.map((s, k) => (k === i ? cand : s));
   const base = { pass: P, op: 'restore outline', el: e.idx, sub: i, nodes: [nodesOf([cur]), nodesOf([cand])] };
@@ -254,9 +277,19 @@ function judge(ctx, P, e, i, cand) {
   const geomCur = (x) => (x.removed ? null : x.subpaths);
   const a = imageError(ctx, render(ctx.doc, crop, { geom: geomCur, box: (x, s) => boxOf(x, s) }), crop);
   const b = imageError(ctx, render(ctx.doc, crop, { geom: (x) => (x === e ? subs : geomCur(x)), box: (x, s) => boxOf(x, s) }), crop);
-  const metrics = { imageErrorBefore: +a.mean.toFixed(3), imageErrorAfter: +b.mean.toFixed(3), wrongPixelsBefore: a.bad, wrongPixelsAfter: b.bad };
-  if ((b.mean <= a.mean - 0.02 && b.bad <= a.bad + Math.max(3, 0.05 * a.bad)) || (b.bad < a.bad * 0.97 && b.mean <= a.mean + 0.01)) {
+  // Two measures of "closer to the image". The pixel count is dominated by the
+  // anti-aliased edge band (a crisp outline against a soft image differs there wherever
+  // the outline is), so it can reject an outline that sits measurably closer to the
+  // image's edges; the edge distance measures exactly that. Either may accept, the other
+  // must not get clearly worse.
+  const ea = edgeError(ctx, e, e.subpaths, i, curImg), eb = edgeError(ctx, e, subs, i, curImg);
+  const metrics = { imageErrorBefore: +a.mean.toFixed(3), imageErrorAfter: +b.mean.toFixed(3), wrongPixelsBefore: a.bad, wrongPixelsAfter: b.bad, edgeErrorBefore: +ea.mean.toFixed(3), edgeErrorAfter: +eb.mean.toFixed(3), edgeP90Before: +ea.p90.toFixed(3), edgeP90After: +eb.p90.toFixed(3) };
+  const pixelsCloser = (b.mean <= a.mean - 0.02 && b.bad <= a.bad + Math.max(3, 0.05 * a.bad)) || (b.bad < a.bad * 0.97 && b.mean <= a.mean + 0.01);
+  const edgesNotWorse = eb.mean <= ea.mean + 0.02 && eb.p90 <= ea.p90 + 0.05;
+  const edgesCloser = eb.measured >= 0.8 * ea.measured && eb.mean <= 0.85 * ea.mean && eb.p90 <= ea.p90 && b.mean <= a.mean + 0.05 && b.bad <= a.bad * 1.25 + 5;
+  const how = `mean ΔE ${a.mean.toFixed(2)} -> ${b.mean.toFixed(2)}, wrong pixels ${a.bad} -> ${b.bad}, distance to the image's edges ${ea.mean.toFixed(2)} -> ${eb.mean.toFixed(2)} px (90 % within ${ea.p90.toFixed(2)} -> ${eb.p90.toFixed(2)} px)`;
+  if ((pixelsCloser && edgesNotWorse) || edgesCloser) {
     e.subpaths = subs;
-    record(ctx, { ...base, accepted: true, label: 'outline moved to the source image', reason: `closer to the source image: mean ΔE ${a.mean.toFixed(2)} -> ${b.mean.toFixed(2)}, wrong pixels ${a.bad} -> ${b.bad}`, metrics });
-  } else record(ctx, { ...base, accepted: false, label: 'outline moved to the source image', reason: `not closer to the source image (mean ΔE ${a.mean.toFixed(2)} -> ${b.mean.toFixed(2)}, wrong pixels ${a.bad} -> ${b.bad})`, metrics });
+    record(ctx, { ...base, accepted: true, label: 'outline moved to the source image', reason: `closer to the source image: ${how}`, metrics });
+  } else record(ctx, { ...base, accepted: false, label: 'outline moved to the source image', reason: `not closer to the source image (${how})`, metrics });
 }

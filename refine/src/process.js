@@ -1,13 +1,16 @@
 // The full pipeline with history stages, the report and the export.
 import { createContext, snapshot, restore, countNodes, resetDoc, nodesOf, rebase } from './engine.js';
 import { passRestore, imageError } from './restore.js';
+import { passConsistency } from './consistency.js';
 import { passStructure, passDuplicates, passMicro, passCollinear, passAnalysis, passFit, passShapes, passTopology, passVisual, passFinal } from './passes.js';
 import { exportSVG } from './output.js';
 import { integrity } from './integrity.js';
 import { probe } from './memprobe.js';
 import { dropChanges, summarize } from './changes.js';
 
-export const STAGES = ['Original', 'Restored', 'Cleaned', 'Simplified', 'Reconstructed', 'Shapes', 'Final'];
+export const STAGES = ['Original', 'Restored', 'Consistent', 'Cleaned', 'Simplified', 'Reconstructed', 'Shapes', 'Final'];
+// stages that change the drawing on purpose: each becomes the reference of what follows
+export const INTENDED = ['Restored', 'Consistent'];
 
 export function processDoc(doc, S, onProgress = () => {}, src = null) {
   resetDoc(doc);
@@ -21,6 +24,9 @@ export function processDoc(doc, S, onProgress = () => {}, src = null) {
     rebase(ctx);
     snapshot(ctx, 'Restored');
   }
+  let consistent = 0;
+  run('1c repetition consistency', () => { consistent = passConsistency(ctx); });
+  if (consistent) { rebase(ctx); snapshot(ctx, 'Consistent'); }
   const afterStructure = doc.elements.map((e) => ({ subpaths: e.subpaths, removed: e.removed }));
   // the reference every later step is measured against (engine.attempt drift check)
   for (const e of doc.elements) e.refSubs = e.subpaths;
@@ -63,11 +69,19 @@ export async function finalize(ctx, opts = {}, o = {}) {
   // passed; "certified" additionally needs STRICT mode
   ctx.validation = {
     ok: fin.ok, kept: fin.kept, mode: fin.mode, level: fin.level, browserVerified: fin.browserVerified, certified: fin.ok && fin.browserVerified && fin.mode === 'strict',
-    browserStatus: fin.browserStatus, fidelity: fin.fidelity, rolledBack: fin.rolledBack, rounds: fin.rounds.length, internal: fin.internal, browser: fin.browser,
+    browserStatus: fin.browserStatus, fidelity: fin.fidelity, intended: fin.intended, reference: fin.reference, rolledBack: fin.rolledBack, rounds: fin.rounds.length, internal: fin.internal, browser: fin.browser,
     processedInternal: fin.processedInternal || null, reason: fin.reason || null, checks: fin.rounds.map((r) => r.failures.map((x) => `${x.check}: ${x.detail}`)),
   };
   ctx.final = { ...(ctx.final || {}), ...(fin.internal ? { visibleShare: fin.internal.visible, solid: fin.internal.solid } : {}) };
   return { text: fin.text, integrity: fin.integrity, validation: ctx.validation };
+}
+
+// The corrected drawing the result is compared with (the last intended change), written
+// as the Node gate writes it; null when the reference is the original.
+export function referenceText(ctx) {
+  let ri = -1;
+  ctx.history.forEach((h, k) => { if (INTENDED.includes(h.name)) ri = k; });
+  return ri > 0 ? exportSVG(ctx.doc, ctx.history[ri].state, { pretty: false }) : null;
 }
 
 export function stateOutput(ctx, stageIndex, opts) {
@@ -94,6 +108,7 @@ export function report(ctx, beforeText, afterText, stageIndex = ctx.history.leng
       reconstructedCurves: acc('curve reconstruction'),
       detectedShapes: shapeOps,
       symmetry: acc('symmetry correction'),
+      consistency: acc('repetition consistency'),
       mergedPaths: acc('merge paths'),
       removedHidden: acc('hidden contours') + acc('hidden element'),
       removedElements: acc('empty element') + acc('invisible element') + acc('hidden element'),
@@ -102,6 +117,8 @@ export function report(ctx, beforeText, afterText, stageIndex = ctx.history.leng
     // what the result contains, by kind (a smaller file is not a repair)
     repairVsOptimization: summarize(ctx, st),
     validation: ctx.validation || null,
+    // the visual difference is measured against the last intended change (or the original)
+    reference: ctx.validation ? ctx.validation.reference : [...ctx.history].reverse().find((h) => INTENDED.includes(h.name))?.name || 'Original',
     visual: g ? { visible: +(g.visibleShare * 100).toFixed(3), pixelDifference: +(g.pixelShare * 100).toFixed(3), meanDeltaE: +g.mean.toFixed(3), structural: +((g.structural || 0) * 100).toFixed(3), spots: g.solid, score: g.score } : null,
     image: ctx.imageFidelity && ctx.imageFidelity.original ? { alignment: ctx.src.T, meanBefore: +ctx.imageFidelity.original.mean.toFixed(3), meanAfter: +ctx.imageFidelity.final.mean.toFixed(3), wrongBefore: +(ctx.imageFidelity.original.badShare * 100).toFixed(3), wrongAfter: +(ctx.imageFidelity.final.badShare * 100).toFixed(3), restored: ctx.counts['restore outline|accepted'] || 0 } : null,
     ms: ctx.ms, times: ctx.times,

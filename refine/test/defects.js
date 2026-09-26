@@ -12,7 +12,7 @@ import fs from 'fs';
 import { loadSVG } from '../src/model.js';
 import { processDoc, finalize, report } from '../src/process.js';
 import { settingsFor } from '../src/engine.js';
-import { drawing, geoDistance } from './geodiff.js';
+import { drawing, geoDistance, paintDistance } from './geodiff.js';
 import { DEFECTS } from './make-defects.js';
 
 const dir = new URL('./defects/', import.meta.url);
@@ -30,15 +30,17 @@ export async function defectTests(ok, skip, { validation = 'fallback', mode = 'p
     const bad = read(`${name}/bad.svg`), exp = read(`${name}/expected.svg`);
     const { out, r } = await runOne(bad, mode, validation);
     const B = drawing(bad), E = drawing(exp), O = drawing(out.text);
-    const dBad = geoDistance(B, E), dOut = geoDistance(O, E);
+    const dBad = geoDistance(B, E), dOut = geoDistance(O, E), pBad = paintDistance(B, E), pOut = paintDistance(O, E);
     const rvo = r.repairVsOptimization, bucket = d.optimization ? rvo.optimizations : rvo.repairs, n = bucket.byType[d.kind] || 0;
     const structure = O.elements === E.elements && O.contours === E.contours && O.topo === E.topo;
-    // closer to the truth: at most half the distance of the defect, or exact where the defect is structural
+    // closer to the truth: at most half the distance of the defect, or exact where the defect is structural;
+    // the same paint by paint (a shape in the wrong colour is not in its place)
     const closer = isFinite(dBad) && dBad > 0 ? dOut <= 0.5 * dBad : dOut <= 0.05;
-    const v = out.validation;
-    rows.push({ name, dBad, dOut, repairs: rvo.repairs.total, optimizations: rvo.optimizations.total });
-    ok(v.ok && out.integrity.ok && structure && closer && n >= d.count,
-      `defect ${name} [${mode}]: distance to expected ${isFinite(dBad) ? dBad.toFixed(3) : 'structure'} u -> ${dOut.toFixed(3)} u; elements ${B.elements}/${O.elements} (expected ${E.elements}), contours ${B.contours}/${O.contours} (expected ${E.contours}); ${d.kind} x${n} (needed ${d.count}); repairs ${rvo.repairs.total}, optimizations ${rvo.optimizations.total}; ${v.level}`);
+    const closerPaint = isFinite(pBad) && pBad > 0 ? pOut <= 0.5 * pBad : pOut <= 0.05;
+    const v = out.validation, fmt = (x) => (isFinite(x) ? x.toFixed(3) : 'structure');
+    rows.push({ name, dBad, dOut, pBad, pOut, repairs: rvo.repairs.total, optimizations: rvo.optimizations.total });
+    ok(v.ok && out.integrity.ok && structure && closer && closerPaint && n >= d.count,
+      `defect ${name} [${mode}]: distance to expected ${fmt(dBad)} u -> ${dOut.toFixed(3)} u${pBad !== dBad || pOut !== dOut ? ` (paint by paint ${fmt(pBad)} u -> ${fmt(pOut)} u)` : ''}; elements ${B.elements}/${O.elements} (expected ${E.elements}), contours ${B.contours}/${O.contours} (expected ${E.contours}); ${d.kind} x${n} (needed ${d.count}); repairs ${rvo.repairs.total}, optimizations ${rvo.optimizations.total}; ${v.level}`);
   }
   // clean geometry, every mode: no repair, no movement
   const clean = read('clean.svg'), C = drawing(clean);

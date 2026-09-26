@@ -4,7 +4,7 @@ import fs from 'fs';
 import { parseXML } from '../src/xml.js';
 import { parsePath, writePath } from '../src/pathdata.js';
 import { loadSVG } from '../src/model.js';
-import { analyzeDoc } from '../src/analyze.js';
+import { analyzeDoc, recommendMode } from '../src/analyze.js';
 import { processDoc, stateOutput, report, finalize, STAGES } from '../src/process.js';
 import { settingsFor } from '../src/engine.js';
 import { integrity } from '../src/integrity.js';
@@ -239,6 +239,52 @@ begin('hidden geometry');
   ok(!/data-k="0"/.test(stateOutput(hctx, hctx.history.length - 1, {}).text), 'a shape certainly hidden under an opaque shape is still removed');
 }
 
+// ---- repeated mirrored parts: one colour
+begin('repetition consistency');
+{
+  // the deer frame: its four corner pieces are mirror copies; the tracer drew the
+  // bottom-left one in the panel colour
+  const deer = fs.readFileSync(new URL('../samples/deer-frame-icon.svg', import.meta.url), 'utf8');
+  const dctx = processDoc(loadSVG(deer), settingsFor('professional'));
+  const dout = await finalize(dctx, {}, { validation: V });
+  const corners = (t) => { const c = loadSVG(t).elements.find((e) => e.fill.rgb && e.fill.rgb.slice(0, 3).join() === '177,220,254'); return c ? c.subpaths.length : 0; };
+  const ev = dctx.log.find((l) => l.op === 'repetition consistency' && l.accepted);
+  ok(dout.validation.ok && corners(deer) === 3 && corners(dout.text) === 4 && ev && ev.evidence.render.outsideChanged === 0, `deer frame: the 4th mirrored corner piece gets the colour of the other three (#def1fe -> #b1dcfe; ${ev ? ev.evidence.render.insidePixels + ' px recoloured, 0 px outside it changed' : 'not applied'}; ${dout.validation.level})`);
+  const iv = dout.validation.intended;
+  if (!oracle) skip('the recolour is confirmed in the browser (no browser)');
+  else ok(iv && iv.stage === 'Consistent' && iv.browserVerified && iv.ok && iv.outside === 0 && iv.disagree === 0 && iv.interiorPixels > 0 && dout.validation.fidelity && dout.validation.fidelity.ok,
+    `the recolour is confirmed in the browser: ${iv.changedPixels} px changed, 0 outside the copy, ${iv.interiorPixels} interior px in the engine's colour; writer fidelity still checked (visible ${(dout.validation.fidelity.visible * 100).toFixed(3)}%)`);
+  // STRICT without the browser accepts no unverified change, the intended one included
+  const sn = await finalize(processDoc(loadSVG(deer), settingsFor('professional')), {}, { validation: 'strict', browser: false });
+  ok(!sn.validation.ok && sn.validation.kept === 'original' && corners(sn.text) === 3 && sn.validation.reference === 'Original', 'STRICT without a browser keeps the original input, not the unverified recolour');
+  ok(!processDoc(loadSVG(deer), settingsFor('safe')).log.some((l) => l.op === 'repetition consistency' && l.accepted), 'safe mode never changes a colour for consistency');
+  ok(!processDoc(loadSVG(deer), settingsFor('professional', { consistency: false })).log.some((l) => l.op === 'repetition consistency'), 'the setting turns it off');
+  // the browser check of an intended change itself, on synthetic renders (20 x 20)
+  const { verifyIntended } = await import('../src/intended.js');
+  const img = (f) => { const a = new Float32Array(400 * 3).fill(255); for (let y = 0; y < 20; y++) for (let x = 0; x < 20; x++) { const c = f(x, y); if (c) a.set(c, (y * 20 + x) * 3); } return a; };
+  const sq = (c) => (x, y) => (x >= 5 && x < 12 && y >= 5 && y < 12 ? c : null), gv = { W: 20, H: 20 };
+  const I0 = img(sq([222, 241, 254])), I1 = img(sq([177, 220, 254]));
+  ok(verifyIntended(I0, I1, I0, I1, gv).ok, 'intended check: the same change in the browser passes');
+  const extra = img((x, y) => (x >= 15 && y >= 15 ? [0, 0, 0] : sq([177, 220, 254])(x, y)));
+  const e1 = verifyIntended(I0, extra, I0, I1, gv);
+  ok(!e1.ok && e1.outside > 0, `intended check: a browser change where the engine changed nothing fails (${e1.outside} px outside)`);
+  const e2 = verifyIntended(I0, img(sq([230, 57, 70])), I0, I1, gv);
+  ok(!e2.ok && e2.disagree > 0 && e2.outside === 0, `intended check: the change drawn in another colour fails (${e2.disagree} of ${e2.interiorPixels} interior px)`);
+  const frame = (colors, extra = '', odd = 'M42 158L42 142L58 158Z') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><path fill="#1d3557" d="M20 20H180V180H20Z"/><path fill="${colors[1]}" d="M40 60V140H60V60Z${odd}"/>${extra}<path fill="${colors[0]}" d="M42 42L58 42L42 58ZM158 42L142 42L158 58Z"/><path fill="${colors[2]}" d="M158 158L142 158L158 142Z"/></svg>`;
+  const applied = (t) => processDoc(loadSVG(t), settingsFor('professional')).log.filter((l) => l.op === 'repetition consistency' && l.accepted).length;
+  ok(applied(frame(['#a8dadc', '#f1faee', '#a8dadc'])) === 1, 'three copies of one colour, one of another: the odd copy is recoloured');
+  ok(applied(frame(['#a8dadc', '#f1faee', '#e63946'])) === 0, 'no colour held by three copies: nothing is recoloured');
+  ok(applied(frame(['#a8dadc', '#f1faee', '#a8dadc'], '', 'M42 158L42 146L50 158Z')) === 0, 'a copy of another shape is not a mirror copy: kept');
+  ok(applied(frame(['#a8dadc', '#f1faee', '#a8dadc'], '<path fill="#e63946" d="M40 150H48V158H40Z"/>')) === 0, 'a copy partly covered by a shape drawn between the two colours: kept (more than its colour would change)');
+  // christmas-clock draws one outline in several stacked colours: layers, not repeats
+  ok(applied('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><path fill="#fff" d="M42 42L58 42L42 58ZM158 42L142 42L158 58ZM158 158L142 158L158 142ZM42 158L42 142L58 158Z"/><path fill="#000" d="M42 158L42 142L58 158Z"/></svg>') === 0, 'a stack of layers (a black copy on top of one of four white ones) is not a repetition: left alone');
+  // the analysis must not call the deer "clean": it reports the odd piece and recommends a mode that fixes it
+  const ra = analyzeDoc(loadSVG(deer), settingsFor('balanced')), rm = recommendMode(ra);
+  ok(ra.counts['inconsistent-repeat'] === 1 && rm.mode === 'professional' && rm.reasons.some((r) => /repeated mirrored part/.test(r)), `the analysis reports the odd corner piece and recommends a mode that fixes it (${rm.mode}: ${rm.reasons.join('; ')})`);
+  const rc0 = recommendMode(analyzeDoc(loadSVG(fs.readFileSync(new URL('./defects/clean.svg', import.meta.url), 'utf8')), settingsFor('balanced')));
+  ok(rc0.mode === 'safe', `clean geometry is still recommended the safe mode (${rc0.reasons.join('; ')})`);
+}
+
 // ---- defect fixtures: real repairs, measured toward the expected geometry
 begin('defect fixtures and clean SVG');
 {
@@ -302,6 +348,25 @@ begin('semantic correction, source image');
   const ri = ctx.history.findIndex((h) => h.name === 'Restored'), spikes = [];
   doc.elements.forEach((e) => { const st = ctx.history[ri].state[e.idx]; if (e.orig && st.subpaths.length === e.orig.length) st.subpaths.forEach((sp, i) => { if (sp !== e.orig[i] && newNeedles(e.orig[i], sp, ctx.u / (e.scale || 1))) spikes.push(`${e.idx}:${i}`); }); });
   ok(!spikes.length, `restoration to the source image adds no spike to any outline${spikes.length ? ' (' + spikes.join(', ') + ')' : ''}`);
+  // the count of wrong pixels is dominated by the anti-aliased edge band, so it once
+  // rejected corner pieces whose outlines sit much closer to the image's edges; the edge
+  // distance decides those (first round, where each outline is judged from the original)
+  const firstRound = new Map();
+  for (const l of ctx.log) if (l.op === 'restore outline' && l.metrics && !firstRound.has(`${l.el}:${l.sub}`)) firstRound.set(`${l.el}:${l.sub}`, l);
+  const edgeWins = [...firstRound.values()].filter((l) => l.accepted && l.metrics.wrongPixelsAfter >= l.metrics.wrongPixelsBefore && l.metrics.edgeErrorAfter <= 0.85 * l.metrics.edgeErrorBefore);
+  ok(edgeWins.length >= 2 && ['1:3', '3:1'].every((k) => edgeWins.some((l) => `${l.el}:${l.sub}` === k)), `outlines closer to the image's edges are accepted even when the pixel count does not improve (${edgeWins.map((l) => `${l.el}:${l.sub} edges ${l.metrics.edgeErrorBefore} -> ${l.metrics.edgeErrorAfter} px, wrong pixels ${l.metrics.wrongPixelsBefore} -> ${l.metrics.wrongPixelsAfter}`).join('; ')})`);
+  const worseBoth = [...firstRound.values()].filter((l) => l.metrics.edgeErrorAfter > l.metrics.edgeErrorBefore && l.metrics.wrongPixelsAfter > l.metrics.wrongPixelsBefore);
+  ok(worseBoth.length > 0 && worseBoth.every((l) => !l.accepted), `outlines farther from both the pixels and the edges are still rejected (${worseBoth.map((l) => `${l.el}:${l.sub}: edges ${l.metrics.edgeErrorBefore} -> ${l.metrics.edgeErrorAfter} px, wrong pixels ${l.metrics.wrongPixelsBefore} -> ${l.metrics.wrongPixelsAfter}`).join('; ')})`);
+  // with the image the recolour of the odd corner piece is checked against it too
+  const rc = ctx.log.find((l) => l.op === 'repetition consistency' && l.accepted);
+  const im = rc && rc.evidence.image;
+  ok(ctx.history.some((h) => h.name === 'Consistent') && im && im.toSibling <= Math.max(im.spread, 3) + 2, `with the source image: in the picture the odd corner piece looks like the other three (ΔE ${im ? im.toSibling : '?'} to the nearest, they differ by up to ${im ? im.spread : '?'} among themselves), so it is recoloured`);
+}
+// the page's own browser check, in a real browser (test/page.js)
+begin('web page (end to end)');
+{
+  if (!oracle) skip('the web page end to end (no browser)', 4);
+  else { const { pageTest } = await import('./page.js'); await pageTest(ok, skip); }
 }
 begin(null);
 { const { closeBrowser } = await import('../src/browser.js'); await closeBrowser(); }

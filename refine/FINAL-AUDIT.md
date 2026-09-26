@@ -3,7 +3,11 @@
 Every number below was measured in this audit, by running the code. None is copied from
 AUDIT.md or REPAIR-LOG.md; those were treated as claims to check (results: REPAIR-LOG.md,
 phase 5). To reproduce: `npm test`, `node test/audit.js`,
-`node --expose-gc test/bench.js --isolated`.
+`node --expose-gc test/bench.js --isolated`, `node test/before-after.js out-dir`.
+
+After the first commit of this audit, the user reported that the deer icon needed
+changing, and it did (section 18). The numbers below are for the current code; numbers
+of the first commit are kept where they are compared, and marked as such.
 
 **Environment:** Node v22.22.2, Linux container (4 cores, 16 GB), running as root.
 Browser: Chromium 1194 (Playwright build, headless), started with `SVG_REFINE_BROWSER=/opt/pw-browsers/chromium`.
@@ -15,19 +19,25 @@ Chrome needs `--no-sandbox` when it runs as root; the oracle now adds it only in
 |---|---|---|---|---|---|
 | Before this audit, no browser | 105 | 0 | 1 line (hid 61 checks) | 82.5 s | not measured |
 | Before this audit, Chromium | 166 | 0 | 0 | 95.2 s | 563 MB |
-| **After, no browser** | **137** | **0** | **65** | 140.6 s | 495 MB |
-| **After, Chromium** | **195** | **0** | **7** | 167.5 s | 498 MB |
+| After the audit's first commit, no browser | 137 | 0 | 65 | 140.6 s | 495 MB |
+| After the audit's first commit, Chromium | 195 | 0 | 7 | 167.5 s | 498 MB |
+| **Now (with section 18), no browser** | **155** | **0** | **70** | 171.2 s | 513 MB |
+| **Now (with section 18), Chromium** | **218** | **0** | **7** | 211.7 s | 554 MB |
 
 - The "before" run with Chromium used the original engine with one change: the oracle
   launch fix (`--no-sandbox` as root). Without that fix, Chromium does not start in
   this container.
 - A skipped check is never counted as passed. Without a browser, every check that needs
-  one is skipped: 61 conformance checks plus 4 oracle and STRICT checks.
+  one is skipped: 61 conformance checks, 4 oracle and STRICT checks, the browser check
+  of the recolour, and the 4 checks of the web page (`test/page.js`).
 - With Chromium, the 7 skips are conformance rows where the whole image is an uncertain
   region, so nothing is compared. The old suite reported these as "agrees".
 - The suite now takes longer mainly because it has more checks and processes more
   geometry. It no longer deletes "probably hidden" contours (section 11), so more
   contours go through every pass.
+- The peak of the whole test process rose with the checks of section 18 (full-document
+  runs and extra browser and internal renders); the per-file engine peaks (section 5)
+  did not.
 
 ## 2. Browser validation: STRICT / FALLBACK
 
@@ -38,14 +48,22 @@ Chrome needs `--no-sandbox` when it runs as root; the oracle now adds it only in
 - **FALLBACK:** the internal renderer alone may accept the output. The result then says
   `browserVerified: false` and `level: 'internal-only'`.
 - `certified` is true only for STRICT with a browser pass.
+- After an intended change (restoration to the source image, repetition consistency)
+  the reference is the corrected drawing, and the change itself must be confirmed in
+  the browser first (section 6). STRICT without a browser keeps the **original input**,
+  not the unverified correction (before the fix of section 18 it kept the correction and
+  called it the original).
 - The web worker runs FALLBACK. The page then draws both files in the browser itself
-  before download. Intermediate stages are marked as not validated.
+  before download. Intermediate stages are marked as not validated. `test/page.js`
+  (part of `npm test` when a browser is present) loads the deer icon into the page in
+  Chromium and checks that the page's own check passes against the corrected drawing
+  and confirms the recolour.
 - Tests cover STRICT without a browser, FALLBACK without a browser, STRICT with the
   browser, and recovery after a failed render.
 
 ## 3. Browser conformance: internal renderer vs Chromium
 
-72 files (samples, fixtures, defect fixtures): **65 measured, 65 agree, 0 differ, 7 not
+73 files (samples, fixtures, defect fixtures): **66 measured, 66 agree, 0 differ, 7 not
 measured** (100 % of the image is uncertain: CSS selectors / `!important` / `@media`,
 CSS filter, CSS transform, invalid transform). The agreement limit is unchanged:
 visible ≤ 0.25 %, mean ΔE ≤ 0.6, 0 solid spots.
@@ -57,11 +75,15 @@ deer-frame-icon 0.038 %. All have 0 solid spots. The full table is in section 17
 ## 4. Why a run can slow down or stop (findings)
 
 Individual and sequential processing were compared in the same order:
-`test/bench.js --isolated`, 72 files.
+`test/bench.js --isolated`, 73 files (re-run on the current code).
 
-- **Sequential is not slower.** The sequential / isolated time ratio is ≤ 1.12 for every
-  file; small files are faster in sequence because the JIT is warm. Heap after GC is
-  6.0 → 7.0 MB over 72 files: no leak.
+- **Sequential is not slower.** The sequential / isolated time ratio is ≤ 1.00 for 71
+  files; small files are faster in sequence because the JIT is warm. Two heavy defect
+  files read 1.23 (distorted-circle) and 1.21 (distorted-repeated-shapes) in this run
+  (1.08 and 1.32 in a run disturbed by other work; 1.09 and 1.12 at the first commit).
+  Their sequential times are the same as at the first commit (1.43 vs 1.53 s, 1.10 vs
+  1.11 s); what varies between runs is the isolated time. Heap after GC is 6.1 → 7.2 MB
+  over 73 files: no leak.
 - **Causes found and fixed:**
   1. **Browser render queue poisoning.** After one render failed, every later render
      rejected. In a batch, one bad file made every following file fail validation.
@@ -77,12 +99,12 @@ Individual and sequential processing were compared in the same order:
      out-of-memory crash (2 GB heap) on `thin-stroke.svg`, caused by a degenerate
      ellipse fitted to a sliver (radius ≈ 10⁹ u). Fixed: a primitive must fit the
      outline's box before it is measured, and sampling is capped at 20 000 points.
-- **Slowest files** (STRICT with Chromium, professional mode):
-  - christmas-clock.svg 24.3 s
-  - clock-14-marks.svg 7.2 s
-  - bakery-icon.svg 6.8 s
-  - winter-clothing-icon.svg 3.8 s
-  - deer-frame-icon.svg 3.6 s
+- **Slowest files** (STRICT with Chromium, professional mode, `test/audit.js`):
+  - christmas-clock.svg 24.1 s
+  - clock-14-marks.svg 7.3 s
+  - bakery-icon.svg 6.7 s
+  - winter-clothing-icon.svg 3.9 s
+  - deer-frame-icon.svg 3.7 s
 
   christmas-clock took 12.8 s before this audit. It is slower now because 28 contours
   that were deleted as "probably hidden" are kept and processed (section 11).
@@ -96,18 +118,23 @@ Individual and sequential processing were compared in the same order:
 - `src/memprobe.js` records the peak heapUsed / RSS / arrayBuffers / external where the
   most buffers are alive (region check, global check, final validation) and at every
   pass.
-- **Peaks over all 72 files** (STRICT, Chromium, one process):
+- **Peaks over all 73 files** (STRICT, Chromium, one process, `node test/audit.js`):
 
-  | Metric | Peak |
-  |---|---|
-  | heapUsed | 47.4 MB |
-  | RSS | 297.9 MB |
-  | arrayBuffers | 124.0 MB |
-  | external | 127.4 MB |
-  | crop cache | 47.9 MB |
+  | Metric | Peak (first commit, 72 files) | Peak (now, 73 files) |
+  |---|---|---|
+  | heapUsed | 47.4 MB | 43.6 MB |
+  | RSS | 297.9 MB | 298.1 MB |
+  | arrayBuffers | 124.0 MB | 124.3 MB |
+  | external | 127.4 MB | 127.7 MB |
+  | crop cache | 47.9 MB | 47.9 MB |
 
-- **Whole test process (VmHWM):** 495 MB without a browser, 498 MB with Chromium,
-  against 563 MB before.
+- **Whole test process (VmHWM):** 495 MB without a browser and 498 MB with Chromium at
+  the first commit, against 563 MB before the audit; now 513 MB and 554 MB (section 1).
+- The new repetition-consistency grouping builds distance grids only for contours that
+  pass a box test and searches them only as far as the tolerance: 0.29 s on
+  christmas-clock, and the peaks stay as above. (A first version that built a grid for
+  every contour raised christmas-clock's peaks by 18 MB RSS and 17 MB arrayBuffers; it
+  was replaced before this commit.)
 - Most of the arrayBuffers peak is garbage not yet collected: after GC it is 21–30 MB.
 
 ## 6. Final validation: the exported file is what is judged
@@ -129,10 +156,20 @@ The chain (`src/validate.js`):
     partners) and check again
 12. If it still cannot be proven: the ORIGINAL
 
+Before step 2, when an intended change made the corrected drawing the reference
+(`src/intended.js`): the original and the corrected drawing are drawn by the browser
+and, from the same two texts, by the internal renderer. Every difference the browser
+shows must lie within 2 px of one the internal renderer shows (nothing changes
+elsewhere), and inside the change (pixels whose 3 × 3 neighbourhood all changed) the
+browser must draw the corrected drawing in the internal renderer's colour. Not
+confirmed: the original input is kept. The page runs the same check in the user's
+browser, and compares the output with the corrected drawing, not with the original.
+
 - **Browser reference:** the input text itself. The engine's own copy of the original
   is compared with it too (**fidelity**), so a writer bug cannot hide by rendering both
   sides through the same writer. It did hide one: the space between two `<tspan>`s was
-  dropped.
+  dropped. The fidelity check now runs in every case; it was skipped whenever an
+  intended stage existed (section 18).
 - When the sanitizer removed something that renders (an external `<image>` shows
   Chrome's broken-image box), the difference is attributed to sanitization and the
   sanitized original is the reference.
@@ -148,33 +185,39 @@ The chain (`src/validate.js`):
 in the final output: a later rollback removes it, and a primitive reconstruction
 supersedes the earlier changes of that contour.
 
-Totals over the 72 files (professional, STRICT, Chromium):
+Totals over the 73 files (professional, STRICT, Chromium; all 73 browser-verified):
 
 | | Count | By type |
 |---|---|---|
-| **Repairs** | **17** | primitive reconstruction 10, broken continuity 3, accidental artifacts 2, geometry correction 1, topology repair 1 |
-| **Optimizations** | **272** | node reduction 139, precision reduction 115, path normalization 14, redundant command removal 2, redundant element removal 2 |
-| Rejected candidates | 511 | |
-| Rolled-back changes | 47 | 43 of them in christmas-clock |
+| **Repairs** | **19** | primitive reconstruction 10, broken continuity 3, repetition consistency 2, accidental artifacts 2, geometry correction 1, topology repair 1 |
+| **Optimizations** | **274** | node reduction 139, precision reduction 117, path normalization 14, redundant command removal 2, redundant element removal 2 |
+| Rejected candidates | 520 | |
+| Rolled-back changes | 47 | all in christmas-clock |
+
+(At the first commit, over 72 files: 17 repairs, 272 optimizations, 511 rejected.)
 
 Real sample files (professional, STRICT with Chromium):
 
 | File | Nodes | Size | Repairs | Optimizations | Rejected | Rolled back | Level | Visible diff internal / browser | Time | Peak RSS / arrayBuffers |
 |---|---|---|---|---|---|---|---|---|---|---|
-| bakery-icon.svg | 225 → 151 | 8.0 → 5.3 KB | 0 | 24 | 32 | 0 | browser-verified | 0.047 % / 0.054 % | 6.8 s | 248.9 / 101.8 MB |
-| christmas-clock.svg | 1010 → 776 | 34.0 → 24.5 KB | 0 | 18 | 182 | 47 | browser-verified | 0.042 % / 0.047 % | 24.3 s | 297.9 / 121.4 MB |
-| clock-14-marks.svg | 351 → 306 | 10.4 → 9.0 KB | 0 | 24 | 92 | 0 | browser-verified | 0.100 % / 0.151 % | 7.2 s | 297.8 / 124.0 MB |
-| deer-frame-icon.svg | 134 → 127 | 4.3 → 3.5 KB | 0 | 7 | 30 | 0 | browser-verified | 0.005 % / 0.008 % | 3.6 s | 272.7 / 107.6 MB |
-| features.svg | 29 → 23 | 1.4 → 1.1 KB | 0 | 5 | 3 | 0 | browser-verified | 0.000 % / 0.004 % | 1.5 s | 255.6 / 97.8 MB |
-| winter-clothing-icon.svg | 99 → 91 | 3.0 → 2.5 KB | 0 | 7 | 20 | 0 | browser-verified | 0.066 % / 0.062 % | 3.8 s | 271.7 / 93.3 MB |
+| bakery-icon.svg | 225 → 151 | 8.0 → 5.3 KB | 0 | 24 | 32 | 0 | browser-verified | 0.047 % / 0.054 % | 6.7 s | 246.0 / 104.7 MB |
+| christmas-clock.svg | 1010 → 776 | 34.0 → 24.5 KB | 0 | 18 | 182 | 47 | browser-verified | 0.042 % / 0.047 % | 24.1 s | 298.1 / 120.0 MB |
+| clock-14-marks.svg | 351 → 306 | 10.4 → 9.0 KB | 0 | 24 | 92 | 0 | browser-verified | 0.100 % / 0.151 % | 7.3 s | 297.5 / 124.3 MB |
+| deer-frame-icon.svg | 134 → 127 | 4.3 → 3.5 KB | 1 | 7 | 30 | 0 | browser-verified | 0.004 % / 0.008 % | 3.7 s | 292.6 / 98.9 MB |
+| features.svg | 29 → 23 | 1.4 → 1.1 KB | 0 | 5 | 3 | 0 | browser-verified | 0.000 % / 0.004 % | 1.4 s | 265.8 / 87.9 MB |
+| winter-clothing-icon.svg | 99 → 91 | 3.0 → 2.5 KB | 0 | 7 | 20 | 0 | browser-verified | 0.066 % / 0.062 % | 3.9 s | 284.5 / 91.0 MB |
 
-On the real sample files the count is **0 repairs**. Everything done there
-is optimization. The 6 "circles rebuilt as real circles" in bakery-icon were already
-circles within 0.1 u, so rewriting them is path normalization.
+On the real sample files (without their source images) the count is **1 repair**: the
+recolour of the deer's fourth corner piece (section 18). At the first commit it was 0,
+and this document said everything done there was optimization; that was wrong for the
+deer. The visible difference of the deer is measured against the corrected drawing.
+Everything else done on the samples is optimization. The 6 "circles rebuilt as real
+circles" in bakery-icon were already circles within 0.1 u, so rewriting them is path
+normalization.
 
 ## 8. Defect fixtures (`test/defects/<name>/bad.svg` + `expected.svg`)
 
-`expected.svg` is the corrected geometry. The test measures the output's distance to it
+`expected.svg` is the corrected drawing. The test measures the output's distance to it
 independently of the engine (dense samples, symmetric Hausdorff distance, in artwork
 units u = 1/1000 of the larger viewBox side). It also checks structure, topology,
 validation and that the repair was counted as a repair of the right type.
@@ -192,6 +235,15 @@ Professional mode, STRICT with Chromium: all browser-verified.
 | tiny-gap (filled + stroked, 0.4 u gaps) | 0.200 → 0.000 u | broken continuity ×2 |
 | self-intersection (corner loop) | 1.500 → 0.000 u | topology repair |
 | distorted-repeated-shapes (5 dots) | 0.573 → 0.227 u | primitive reconstruction ×5 (common radius) |
+| inconsistent-repeat (one of four mirrored corner pieces in the panels' colour) | paint by paint: far (≥ 64 u) → 0.000 u | repetition consistency |
+
+The distance is also measured **paint by paint** (`paintDistance`: the same Hausdorff
+distance between the outlines of each fill / stroke colour), so a shape in the wrong
+colour counts as far from its place. For inconsistent-repeat the plain distance is 0
+before and after (the geometry is right, the colour is not); paint by paint the
+triangle in the panels' colour is farther than the 64 u search reach from any
+panel-coloured outline of the expected drawing, and 0.000 u after the repair. Every
+fixture must now get closer on both measures.
 
 **Before this audit** (same fixtures): only the rectangle was repaired.
 - distorted-repeated-shapes got **worse** (0.573 → 1.152 u) and outlier-control-point
@@ -286,6 +338,22 @@ Each has a regression test in `test/run.js` or `test/defects.js`:
     spurs before the rebuild, and a candidate that still adds a spike is rejected. The
     test fails on the old code and passes now.
 
+Found after the user reported that the deer icon needed changing (section 18):
+
+14. Restoration accepted an outline only when the count of wrong pixels improved. That
+    count is dominated by the anti-aliased band along every edge, so it rejected
+    corner pieces 43–47 % closer to the image's edges.
+15. The writer-fidelity check was skipped whenever an intended stage existed.
+16. STRICT without a browser returned the unverified corrected drawing as
+    "original-kept".
+17. An intended change was never drawn by the browser.
+18. The page's own browser check compared the output with the original, so a correction
+    that is visible by design fails it. Measured on the deer: 415 spot px against a limit
+    of 8, so the page would have shown and offered the original instead of the fix.
+19. `record()` counted informational log entries as rejected.
+20. The analysis recommended "safe: the geometry is already clean" for the deer, whose
+    fourth corner piece has the wrong colour.
+
 ## 14. Remaining limits and unsupported SVG features
 
 - **Not drawn by the internal renderer** (`CAPS`):
@@ -295,7 +363,7 @@ Each has a regression test in `test/run.js` or `test/defects.js`:
   - `<switch>`
 
   Elements that need them are locked and their area is an uncertain region; they are
-  validated only in the browser. Seen in the 72 files: image 3, text 1, filter 4,
+  validated only in the browser. Seen in the 73 files: image 3, text 1, filter 4,
   pattern 2, marker 2, dash 1, vector-effect 1.
 - **CSS:** complex selectors, `@media`, `!important`, CSS `transform`, `var()` /
   `calc()` lock the whole document (6 + 2 + 1 files).
@@ -311,6 +379,17 @@ Each has a regression test in `test/run.js` or `test/defects.js`:
 - The page's own browser check keeps the original on failure but does not roll back
   single contours as the Node gate does.
 - The last three limits are design limits, not bugs.
+- **Repetition consistency** (section 18) only groups mirror copies about the drawing's
+  centre (vertical axis, horizontal axis, or a half turn). Copies repeated by
+  translation or by other rotations (a row of icons, a ring of marks) are not grouped.
+  It needs at least 3 copies of one colour making at least 3/4 of the group (2 against
+  2 is left alone), solid opaque unstroked fills in one coordinate system, and a copy
+  that nothing covers. Without the source image the decision rests on the repetition
+  alone. It changes a colour, so it is off in the safe and balanced modes and can be
+  turned off (setting, `--no-consistency`).
+- **Restoration follows a blurred picture.** Restored outlines are about 0.2 px (mean)
+  from the picture's edges; a straight edge can come out with a bow of that size (the
+  top edge of the deer's top-left corner piece bows by 0.15 px).
 
 ## 15. What this audit does not claim
 
@@ -318,8 +397,9 @@ It does not claim "production ready", "100 % accurate" or "fully validated". Wha
 evidence shows:
 
 - The test results above (0 failures, skips counted).
-- Browser-verified output for all 72 files when Chromium is present, in STRICT mode.
-- Measured repairs moving geometry toward the correct drawing on the 10 defect cases.
+- Browser-verified output for all 73 files when Chromium is present, in STRICT mode.
+- Measured repairs moving geometry (and, for one case, colour) toward the correct
+  drawing on the 11 defect cases.
 - No change on clean geometry.
 - Bounded memory.
 
@@ -329,23 +409,29 @@ does not modify; it does not validate them internally.
 ## 16. Before / after on the sample with its source image
 
 `node test/before-after.js out-dir` (needs a browser). `deer-frame-icon.svg` is traced
-from `deer-frame-source.png`; professional mode, restoration to the image, STRICT.
+from `deer-frame-source.png`; professional mode: restoration to the image, repetition
+consistency, STRICT. The first column of "after" is this audit's first commit; the
+second is the current code (section 18).
 
-| | Before | After |
-|---|---|---|
-| Wrong pixels against the source image (ΔE > 20) | 4.00 % | 3.90 % |
-| Mean ΔE against the source image | 4.72 | 4.67 |
-| Nodes | 134 | 130 |
-| Size | 4.3 KB | 3.8 KB |
-| Repairs | — | 4 (geometry correction: outlines moved to the image) |
-| Optimizations | — | 6 |
-| Final validation | — | browser-verified; visible difference to the corrected drawing 0.01 % internal / 0.00 % browser |
+| | Before | After (first) | After (now) |
+|---|---|---|---|
+| Wrong pixels against the source image (ΔE > 20) | 4.00 % | 3.90 % | 3.89 % |
+| Mean ΔE against the source image | 4.72 | 4.67 | 4.67 |
+| Corner pieces whose inner edge follows the picture's arc | 0 of 4 | 2 of 4 | 4 of 4 |
+| Corner pieces in the corner colour | 3 of 4 | 3 of 4 | 4 of 4 |
+| Nodes | 134 | 130 | 129 |
+| Size | 4.3 KB | 3.8 KB | 3.9 KB |
+| Repairs | — | 4 | 8 (geometry correction 7, repetition consistency 1) |
+| Optimizations | — | 6 | 4 |
+| Final validation | — | browser-verified | browser-verified; the intended change confirmed in the browser (4 772 px changed, 0 outside the change, 0 in another colour); visible difference to the corrected drawing 0.001 % internal / 0.008 % browser |
 
 - **Frame corner:** the straight diagonal became the arc the image shows.
-- **The rest of the error:** the improvement is small (4.00 → 3.90 %). Most of what is
+- **The rest of the error:** the improvement in wrong pixels is small. Most of what is
   left is the soft, blurred edges of the image, not the drawing.
 - **The spike:** a first run of this check showed a spike in another corner. It is
   fixed (bug 13).
+- The first version of this section called the result good enough. It was not: see
+  section 18.
 
 ## 17. Conformance table (internal renderer vs Chromium, 400 px on the long side)
 
@@ -423,3 +509,61 @@ from `deer-frame-source.png`; professional mode, restoration to the image, STRIC
 | self-intersection/bad.svg | 0.000 % | 0.000 % | 0.000 | 0 | 0 % | agrees |
 | tiny-artifact/bad.svg | 0.000 % | 0.000 % | 0.000 | 0 | 0 % | agrees |
 | tiny-gap/bad.svg | 0.000 % | 0.015 % | 0.004 | 0 | 0 % | agrees |
+| inconsistent-repeat/bad.svg | 0.000 % | 0.000 % | 0.000 | 0 | 0 % | agrees |
+
+## 18. The deer icon needed changing (user report)
+
+After section 16 the icon came out almost unchanged, and the analysis recommended the
+safe mode because "the geometry is already clean". The user said the shape needed
+changing. Checked against the source image, it did.
+
+**What was wrong**
+
+- **The colour of one corner piece.** The four corner pieces are mirror copies of one
+  shape. Three are `#b1dcfe`; the bottom-left one is `#def1fe`, the colour of the side
+  panels. The picture is lit a little unevenly: the median colour inside the four pieces
+  is `#afdefb`, `#b4e4fb`, `#bee5fc` and `#c6eafc`. The bottom-left piece is the
+  lightest, and the tracer put it on the neighbouring palette colour.
+- **The shape of the corner pieces.** Their inner edge is a straight diagonal in the SVG
+  and an arc in the picture.
+
+**Why the engine did not fix them**
+
+- It never compared the colours of repeated parts. No pass did.
+- Restoration rejected the arc for two of the four pieces (bug 14): the count of wrong
+  pixels got worse (116 → 130 and 95 → 101) although the outlines moved 43–47 % closer
+  to the picture's edges (0.293 → 0.166 px and 0.392 → 0.209 px).
+
+**What it does now**
+
+- Restoration also measures the distance from the outline to the picture's edges.
+  Either measure may accept; the other must not get clearly worse. All four pieces now
+  follow the arc. An outline farther from both measures is still rejected.
+- `src/consistency.js`, **repetition consistency** (a repair). Contours that are mirror
+  images of each other about the drawing's centre form a group. When at least 3 copies
+  share a colour and make at least 3/4 of the group, an odd copy is moved into an
+  element of that colour, if:
+  - the render around it does not change outside the copy, and inside it becomes
+    exactly the majority colour (paint order included; a copy covered by another shape
+    is left alone);
+  - with the source image, the picture does not contradict it: inside the odd copy the
+    picture must look like one of the other copies (ΔE to the nearest one at most the
+    spread among the others + 2). Deer: 2.8 to the nearest, 5.3 among the others.
+  - two members of the group are never in one place (stacked layers are not repeats).
+- The recolour is an intended change: it becomes a history stage ("Consistent") and the
+  reference of the later passes, and it is checked in the browser (section 6).
+- The analysis reports "1 repeated mirrored part drawn in another colour than its
+  copies" and recommends the professional mode.
+
+**The picture alone does not decide the colour.** Inside the bottom-left piece the
+picture is a little closer to `#def1fe` (ΔE 6.8) than to `#b1dcfe` (ΔE 9.9). What
+decides is the repetition: four copies of one part, three of them `#b1dcfe`, and in the
+picture the fourth looks like its neighbours as much as they look like each other.
+That is a design judgment, so the pass is off in the safe and balanced modes and can be
+turned off.
+
+**Results** (STRICT, Chromium): with the source image, see the table in section 16.
+Without it (the SVG alone): the recolour only, 1 repair; confirmed in the browser
+(598 px changed, 0 outside the piece, 408 interior px in the engine's colour).
+Checked on all 73 files in aggressive mode: the deer and the new defect fixture are
+the only files where a colour changes.

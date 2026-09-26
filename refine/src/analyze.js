@@ -4,6 +4,7 @@ import { createContext, visiblePixels, resetDoc } from './engine.js';
 import { complexity, nodeTypes, segLength, tanIn, tanOut, recognize, organicScore, topology, polyOf, sampleNative, symmetry } from './features.js';
 import { selfIntersections, turnDeg, lineDeviation, dist, bbox, polyArea } from './geom.js';
 import { walk, localName } from './xml.js';
+import { findRepeats } from './consistency.js';
 
 export function analyzeDoc(doc, S) {
   resetDoc(doc);
@@ -65,6 +66,9 @@ export function analyzeDoc(doc, S) {
   if (doc.removed.length) add('security', { count: doc.removed.length, text: `${doc.removed.length} unsafe item(s) removed on input` });
   for (const w of doc.warnings) add('warning', { text: w });
   for (const e of doc.elements) if (e.errors && e.errors.length) add('invalid-path', { el: e.idx, text: e.errors[0] });
+  // a repeated mirrored part in another colour than its copies (a tracing error; the
+  // repair, with its render check, is in consistency.js)
+  for (const { g, major, n } of findRepeats(ctx)) if (n >= 3 && n >= 0.75 * g.length) for (const m of g.filter((p) => p.color !== major)) add('inconsistent-repeat', { el: m.e.idx, sub: m.i, text: `drawn in ${m.color} while ${n} mirror copies are ${major}` });
   const drawable = doc.elements.filter((e) => e.subpaths.length);
   const summary = {
     tags, elements: doc.elements.length, paths: doc.elements.filter((e) => e.tag === 'path').length, editable: doc.elements.filter((e) => e.editable).length,
@@ -87,8 +91,9 @@ export function recommendMode(a) {
   if ((s.complexity['High'] || 0) + (s.complexity['Very high'] || 0)) reasons.push('highly detailed vector paths');
   if (noise > 0.05) reasons.push(`${Math.round(noise * 100)}% of the nodes are noise (micro-segments, duplicates, kinks, collinear)`);
   if (c['near-primitive']) reasons.push(`${c['near-primitive']} shape(s) that are almost perfect circles / rectangles`);
+  if (c['inconsistent-repeat']) reasons.push(`${c['inconsistent-repeat']} repeated mirrored part(s) drawn in another colour than their copies`);
   let mode = 'professional';
-  if (s.gradients || s.masks || s.clips || s.strokes > s.editable / 2) { mode = 'balanced'; reasons.push('gradients / masks / strokes present: conservative reconstruction'); }
+  if (s.gradients || s.masks || s.clips || s.strokes > s.editable / 2) { mode = 'balanced'; reasons.push('gradients / masks / strokes present: conservative reconstruction'); if (c['inconsistent-repeat']) reasons.push('the professional mode recolours the repeated part'); }
   else if (!reasons.length) { mode = 'safe'; reasons.push('the geometry is already clean'); }
   return { mode, reasons };
 }

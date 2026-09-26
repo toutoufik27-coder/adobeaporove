@@ -1,6 +1,7 @@
 // Before / after on the sample that has its source image: deer-frame-icon.svg, traced
-// from deer-frame-source.png. Runs the engine (professional mode, restoration to the
-// image, final validation STRICT in the browser) and writes to out-dir:
+// from deer-frame-source.png. Runs the engine (professional mode: restoration to the
+// image, repetition consistency; final validation STRICT in the browser) and writes to
+// out-dir:
 //   deer-before.svg, deer-after.svg, deer-compare.html and deer-before-after.png (the
 //   page drawn by the browser: source | before | after, zooms with the outlines)
 // Needs Chrome / Edge (SVG_REFINE_BROWSER=... when it is not in a standard place).
@@ -36,19 +37,30 @@ const rep = report(ctx, svgText, out.text), v = out.validation, im = rep.image, 
 fs.writeFileSync(path.join(OUT, 'deer-before.svg'), svgText);
 fs.writeFileSync(path.join(OUT, 'deer-after.svg'), out.text);
 
-// where the drawing moved the most: changed contours, largest displacement first
+// where the drawing changed: every final contour against the original contour it came
+// from (same element and index, or, when a contour moved to another element, the
+// original contour at the same place); recoloured contours first, then the largest
+// displacement
 const fin = ctx.history.at(-1).state, moves = [];
+const origs = doc.elements.filter((e) => e.orig && e.orig.length).flatMap((e) => e.orig.map((sp, i) => ({ e, i, sp, box: elementBox(e, [sp]) })));
+const centre = (b) => [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
+const hex = (e) => '#' + e.fill.rgb.slice(0, 3).map((v) => v.toString(16).padStart(2, '0')).join('');
 for (const e of doc.elements) {
   const st = fin[e.idx];
-  if (!e.orig || !e.orig.length || st.removed || st.subpaths.length !== e.orig.length) continue;
+  if (!e.orig || !e.orig.length || st.removed) continue;
   st.subpaths.forEach((sp, i) => {
-    if (sp === e.orig[i]) return;
-    const d = curveDistance(e.orig[i], sp, ctx.u / (e.scale || 1)) / (ctx.u / (e.scale || 1));
-    moves.push({ e, i, d, box: elementBox(e, [sp]), box0: elementBox(e, [e.orig[i]]) });
+    if (e.orig.includes(sp)) return;
+    const box = elementBox(e, [sp]), c = centre(box);
+    // same place and size (concentric contours share a centre, not a size)
+    const far = (b) => Math.hypot(centre(b)[0] - c[0], centre(b)[1] - c[1]) + Math.abs(b[2] - b[0] - (box[2] - box[0])) + Math.abs(b[3] - b[1] - (box[3] - box[1]));
+    const from = st.subpaths.length === e.orig.length ? origs.find((o) => o.e === e && o.i === i) : origs.map((o) => ({ o, d: far(o.box) })).sort((a, b) => a.d - b.d)[0].o;
+    const d = curveDistance(from.sp, sp, ctx.u / (e.scale || 1)) / (ctx.u / (e.scale || 1));
+    const recolour = from.e !== e && from.e.fill.kind === 'solid' && e.fill.kind === 'solid' && hex(from.e) !== hex(e) ? [hex(from.e), hex(e)] : null;
+    moves.push({ e, i, d, box, box0: from.box, recolour });
   });
 }
-moves.sort((a, b) => b.d - a.d);
-// zoom windows: around the three largest moves (merged when they overlap)
+moves.sort((a, b) => (b.recolour ? 1 : 0) - (a.recolour ? 1 : 0) || b.d - a.d);
+// zoom windows: around the recoloured parts and the largest moves (merged when they overlap)
 const size = Math.max(doc.viewBox[2], doc.viewBox[3]), win = size * 0.16, zooms = [];
 for (const m of moves) {
   // the point of the largest displacement is not known here: centre of the contour's box
@@ -79,7 +91,9 @@ const row = (label, a, b, good) => `<tr><td>${label}</td><td>${a}</td><td class=
 const zoomRows = zooms.map((z, k) => {
   const box = [z.c[0] - z.w / 2, z.c[1] - z.w / 2, z.w, z.w];
   const p = panels(box);
-  return `<h2>تكبير ${k + 1}: الحد تحرك ${z.m.d.toFixed(1)} u (${(z.m.d / 10).toFixed(2)}% من حجم التصميم) نحو الصورة</h2>
+  const hexb = (h) => `<bdi dir="ltr">${h}</bdi>`;
+  const title = z.m.recolour ? `لون الجزء كان ${hexb(z.m.recolour[0])} وأصبح ${hexb(z.m.recolour[1])} مثل النسخ الثلاث المتناظرة الأخرى${z.m.d >= 0.05 ? `، وحافته تحركت ${z.m.d.toFixed(1)} u نحو الصورة` : ''}` : `الحد تحرك ${z.m.d.toFixed(1)} u (${(z.m.d / 10).toFixed(2)}% من حجم التصميم) نحو الصورة`;
+  return `<h2>تكبير ${k + 1}: ${title}</h2>
   <div class="grid4">${p.map((s, i) => `<figure><img src="${uri(s)}"><figcaption>${['الصورة الأصلية (PNG)', 'قبل (SVG الأصلي)', 'بعد (الناتج)', 'الحواف: الأحمر قبل، الأخضر بعد، فوق الصورة'][i]}</figcaption></figure>`).join('')}</div>`;
 }).join('');
 const fp = panels(full);
@@ -95,7 +109,7 @@ td.good{color:#127a3a;font-weight:600}td.bad{color:#b42318;font-weight:600}.cols
 .note{font-size:13px;color:#5b6570;margin-top:8px}
 </style></head><body>
 <h1>قبل وبعد: deer-frame-icon.svg مع صورته الأصلية</h1>
-<p class="sub">الوضع الاحترافي، مع المطابقة مع الصورة الأصلية. الناتج مرّ بالتحقق النهائي في المتصفح (STRICT، Chromium): ${v.level === 'browser-verified' ? 'ناجح ومُتحقق منه في المتصفح' : v.level}.</p>
+<p class="sub">الوضع الاحترافي: المطابقة مع الصورة الأصلية، وتوحيد لون الأجزاء المتكررة المتناظرة. الناتج مرّ بالتحقق النهائي في المتصفح (STRICT، Chromium): ${v.level === 'browser-verified' ? 'ناجح ومُتحقق منه في المتصفح' : v.level}.</p>
 <div class="grid3">${fp.slice(0, 3).map((s, i) => `<figure><img src="${uri(s)}"><figcaption>${['الصورة الأصلية (PNG) التي رُسم منها الفيكتور', 'قبل: SVG الأصلي', 'بعد: SVG الناتج'][i]}</figcaption></figure>`).join('')}</div>
 <div class="cols"><div><h2>المطابقة مع الصورة الأصلية</h2><table><tr><th></th><th>قبل</th><th>بعد</th></tr>
 ${row('بكسلات خاطئة (ΔE > 20)', pct(im.wrongBefore / 100), pct(im.wrongAfter / 100), im.wrongAfter < im.wrongBefore)}
@@ -104,15 +118,16 @@ ${row('حواف أعيدت إلى مكانها في الصورة', '—', String
 </table></div><div><h2>الملف</h2><table><tr><th></th><th>قبل</th><th>بعد</th></tr>
 ${row('العقد', rep.original.nodes, rep.processed.nodes, rep.processed.nodes <= rep.original.nodes)}
 ${row('الحجم', (rep.original.bytes / 1024).toFixed(1) + ' KB', (rep.processed.bytes / 1024).toFixed(1) + ' KB', rep.processed.bytes <= rep.original.bytes)}
-${row('إصلاحات فعلية', '—', `${rvo.repairs.total} (${Object.entries(rvo.repairs.byType).map(([k, n]) => ({ 'geometry correction': 'تصحيح هندسة', 'primitive reconstruction': 'إعادة بناء شكل' }[k] || k) + ' ' + n).join('، ') || '—'})`)}
+${row('إصلاحات فعلية', '—', `${rvo.repairs.total} (${Object.entries(rvo.repairs.byType).map(([k, n]) => ({ 'geometry correction': 'تصحيح هندسة', 'primitive reconstruction': 'إعادة بناء شكل', 'repetition consistency': 'توحيد لون جزء متكرر' }[k] || k) + ' ' + n).join('، ') || '—'})`)}
 ${row('تحسينات (حجم وبنية فقط)', '—', String(rvo.optimizations.total))}
 ${row('فرق مرئي عن الرسم المصحح: داخلي / متصفح', '—', `${pct(v.internal.visible)} / ${v.browser && v.browser.visible != null ? pct(v.browser.visible) : '—'}`)}
+${v.intended ? row('التصحيح المقصود كما رسمه المتصفح', '—', v.intended.browserVerified ? `${v.intended.ok ? 'في مكانه فقط' : 'لم يتأكد'}: ${v.intended.changedPixels} بكسل تغيّر، ${v.intended.outside} خارج مكانه، ${v.intended.disagree} بلون مختلف` : 'لم يُفحص في المتصفح', v.intended.ok) : ''}
 </table></div></div>
 ${zoomRows}
 <p class="note">الأرقام محسوبة من هذا التشغيل. «البكسلات الخاطئة» تقارن رسم الـSVG بالصورة الأصلية، وجزء كبير من الباقي سببه نعومة حواف الصورة وليس خطأ في الرسم. تحرّك الحواف مقاس بمسافة Hausdorff، و1 u = 1/1000 من حجم التصميم.</p>
 </body></html>`;
 fs.writeFileSync(path.join(OUT, 'deer-compare.html'), html);
-console.log(JSON.stringify({ level: v.level, image: im, nodes: [rep.original.nodes, rep.processed.nodes], bytes: [rep.original.bytes, rep.processed.bytes], repairs: rvo.repairs, optimizations: rvo.optimizations.total, internal: v.internal, browser: v.browser, zooms: zooms.map((z) => ({ el: z.m.e.idx, sub: z.m.i, d: +z.m.d.toFixed(2) })), moves: moves.length, restoredAccepted: ctx.counts['restore outline|accepted'] || 0, restoredRejected: ctx.counts['restore outline|rejected'] || 0 }, null, 1));
+console.log(JSON.stringify({ level: v.level, image: im, nodes: [rep.original.nodes, rep.processed.nodes], bytes: [rep.original.bytes, rep.processed.bytes], repairs: rvo.repairs, optimizations: rvo.optimizations.total, internal: v.internal, browser: v.browser, zooms: zooms.map((z) => ({ el: z.m.e.idx, sub: z.m.i, d: +z.m.d.toFixed(2), recolour: z.m.recolour })), moves: moves.length, intended: v.intended, restoredAccepted: ctx.counts['restore outline|accepted'] || 0, restoredRejected: ctx.counts['restore outline|rejected'] || 0 }, null, 1));
 await closeBrowser();
 
 // screenshot of the page, drawn by the browser after every image is decoded

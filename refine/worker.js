@@ -1,7 +1,7 @@
 // The engine runs here, off the page's thread.
 import { loadSVG } from './src/model.js';
 import { analyzeDoc, recommendMode } from './src/analyze.js';
-import { processDoc, stateOutput, report, stageMetrics, idMap, inspect, finalize, STAGES } from './src/process.js';
+import { processDoc, stateOutput, report, stageMetrics, idMap, inspect, finalize, referenceText, STAGES } from './src/process.js';
 import { settingsFor, MODES } from './src/engine.js';
 import { exportSVG } from './src/output.js';
 import { makeSource, align } from './src/source.js';
@@ -35,10 +35,12 @@ self.onmessage = async (ev) => {
       const orig = stateOutput(ctx, 0, m.exportOptions || {});
       // the exported text passes the final validation (re-parsed, re-rendered) before it is
       // shown. The worker has no browser oracle: FALLBACK here, and the page then draws
-      // the result in the browser itself (app.js browserCheck) before it can be downloaded.
+      // the result in the browser itself (app.js browserCheck) before it can be downloaded,
+      // against the corrected drawing when an intended change made one (`reference`).
       const out = await finalize(ctx, m.exportOptions || {}, { browser: false, validation: 'fallback' });
       const r = report(ctx, text, out.text);
-      post('processed', { defaults: MODES, dry: !!m.dry, mode: m.mode, settings: S, report: r, stages: ctx.history.map((h) => ({ name: h.name, nodes: h.nodes })), original: orig.text, output: out.text, integrity: out.integrity, validation: out.validation, log: ctx.log, counts: ctx.counts });
+      const reference = out.validation.ok ? referenceText(ctx) : null;
+      post('processed', { defaults: MODES, dry: !!m.dry, mode: m.mode, settings: S, report: r, stages: ctx.history.map((h) => ({ name: h.name, nodes: h.nodes })), original: orig.text, reference, output: out.text, integrity: out.integrity, validation: out.validation, log: ctx.log, counts: ctx.counts });
     } else if (m.type === 'stage') {
       const o = stateOutput(ctx, m.index, m.exportOptions || {});
       post('stage', { index: m.index, output: o.text, integrity: o.integrity, metrics: stageMetrics(ctx, m.index), report: report(ctx, text, o.text, m.index) });

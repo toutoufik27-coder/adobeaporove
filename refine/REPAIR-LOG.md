@@ -72,3 +72,65 @@ running the code; the full report with the measured numbers is `FINAL-AUDIT.md`.
 | "50 files in one process: no heap growth" | Confirmed: heap after GC stays 6.0 → 7.0 MB over 72 files. A sequential run is not slower than isolated processes (ratio ≤ 1.12). |
 | README: "deer-frame: wrong pixels 3.93 % → 3.82 %, the frame corner becomes an arc" | Measured: 4.00 % → 3.90 %. The corner does become an arc. Another corner got a **spike** (the outline turned back by 163°), which the pixel error did not show. **Fixed**, with a test. |
 | README: "christmas-clock 1010 → 317 nodes, 0.148 %"; "bakery: 6 circles rebuilt as real circles" | Not reproducible with the code as delivered: christmas-clock came out at 1010 → 452 nodes without a browser and 1010 → 602 with one. The 6 bakery "circles" were already circles within 0.1 u, so rewriting them is **path normalization, not a repair**. The README now points to the measured numbers. |
+
+## Phase 6 — the deer icon needed a visible correction (user report)
+
+After phase 5, `deer-frame-icon.svg` with its source image came out almost unchanged,
+and the report called the geometry clean. The user pointed out that the icon needed
+changing. Measured against `deer-frame-source.png`, two things were wrong:
+
+1. **The fourth corner piece had the wrong colour.** The four corner pieces are mirror
+   copies of one shape. The tracer drew three of them in `#b1dcfe` and the bottom-left
+   one in `#def1fe`, the colour of the side panels. In the picture the corners are lit
+   a little unevenly (median inside each piece: `#afdefb`, `#b4e4fb`, `#bee5fc`,
+   `#c6eafc`). The bottom-left one is the lightest and fell on the neighbouring
+   palette colour, although in the picture it looks like its neighbour (ΔE 3.3 to the
+   bottom-right piece; the other three differ by up to 4.7 among themselves).
+2. **The corner pieces' curved edge was drawn as a straight diagonal.** The picture shows
+   an arc (the inside of the frame's rounded corner).
+
+Why phase 5 did not fix them:
+
+- **Colours were never compared.** No pass looked at repeated parts drawn in different
+  colours. **Added:** `src/consistency.js` (repetition consistency, a repair); see
+  README and FINAL-AUDIT.md section 18 for the evidence it needs.
+- **Restoration judged "closer to the image" by counting wrong pixels.** That count is
+  dominated by the anti-aliased band along every edge (a crisp outline against a soft
+  image differs there wherever the outline is), so it rejected outlines that sit
+  measurably closer to the image's edges: the top-right piece (edge distance 0.293 →
+  0.166 px, wrong pixels 116 → 130) and the bottom-left one (0.392 → 0.209 px, 95 → 101).
+  **Fixed:** `restore.js` also measures the distance from the outline to the image's
+  edges (mean and 90th percentile); either measure may accept, the other must not get
+  clearly worse. An outline farther from both is still rejected (test).
+- **The analysis recommended the safe mode ("the geometry is already clean").** It now
+  reports the odd corner piece and recommends the professional mode.
+
+Validation bugs found while making the recolour an intended change (it is visible on
+purpose, so it becomes the reference, like the restoration to the image):
+
+| Bug | Effect | Fix |
+|---|---|---|
+| The writer-fidelity check (input vs the engine's own copy of the original, in the browser) was skipped whenever an intended stage existed | with a source image, a writer bug could not show | always run, on the exact copy of the original |
+| STRICT without a browser kept the intended stage and called it "original-kept" | an unverified correction was written as if it were the original | the original input is kept |
+| The intended change itself was never drawn by the browser | its evidence was internal only | `src/intended.js`: every difference the browser shows between the original and the corrected drawing must be within 2 px of one the internal renderer shows, and inside the change the browser must draw the engine's colour; otherwise the original input is kept |
+| The page's own browser check compared the output with the original | a correction that is visible by design fails it (deer: 415 spot px against a limit of 8), and the page shows and offers the original instead | the page compares with the corrected drawing and runs the same intended-change check (`test/page.js`) |
+| `record()` counted informational entries (`accepted: null`) as rejected | wrong counts | counted apart |
+
+Also found while testing the new pass on every file: `christmas-clock.svg` draws some
+outlines several times in different colours, stacked. Those are layers, not repeated
+parts; a group with two members in one place is now left alone (test with a black
+layer on one of four white copies).
+
+Tests added: the deer (recolour applied, 0 px outside the piece changed, confirmed in
+the browser, the fidelity check still runs), STRICT without a browser keeps the input,
+safe mode and the setting leave colours alone, a 2 + 1 + 1 split, a non-mirror shape,
+a covered copy and stacked layers are left alone, the intended-change check on
+synthetic renders (passes, and fails for a change elsewhere and for a wrong colour),
+restoration accepts the two corner pieces and still rejects an outline farther from
+both measures, the recommendation, and an eleventh defect fixture
+(`inconsistent-repeat`) measured paint by paint (`test/geodiff.js paintDistance`).
+
+Result: `npm test` 155 passed, 0 failed, 70 skipped without a browser; 218 passed,
+0 failed, 7 skipped with Chromium. The deer with its source image: wrong pixels 4.00 →
+3.89 %, all four corner pieces follow the picture's arc and have one colour, 8 repairs,
+browser-verified. Numbers and limits: FINAL-AUDIT.md sections 1, 16 and 18.

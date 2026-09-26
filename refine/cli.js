@@ -3,7 +3,8 @@
 //   node cli.js in.svg                      analysis + recommendation only
 //   node cli.js in.svg out.svg [options]
 // options: --mode safe|balanced|professional|aggressive (default: recommended)
-//          --stage Original|Cleaned|Simplified|Reconstructed|Shapes|Final
+//          --stage Original|Consistent|Cleaned|Simplified|Reconstructed|Shapes|Final
+//          --no-consistency   never recolour a repeated part (professional / aggressive do)
 //          --minify | --pretty   --flatten-transforms   --no-structure
 //          --precision adaptive|2|3|4   --report file.json   --force
 //          --validation strict|fallback   strict (default): the result is accepted only
@@ -24,7 +25,7 @@ const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] :
 const has = (k) => args.includes(k);
 const valued = new Set(['--mode', '--stage', '--precision', '--report', '--ai', '--model', '--provider', '--validation']);
 const files = args.filter((a, i) => !a.startsWith('--') && !valued.has(args[i - 1]));
-if (!files[0]) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 15).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(1); }
+if (!files[0]) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 16).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(1); }
 
 const text = fs.readFileSync(files[0], 'utf8');
 const doc = loadSVG(text);
@@ -38,7 +39,7 @@ console.log(`recommended: ${rec.mode} — ${rec.reasons.join('; ')}`);
 if (!files[1]) process.exit(0);
 
 const mode = opt('--mode', rec.mode);
-const S = settingsFor(mode, { flattenTransforms: has('--flatten-transforms'), ...(opt('--precision') ? { precision: opt('--precision') } : {}) });
+const S = settingsFor(mode, { flattenTransforms: has('--flatten-transforms'), ...(has('--no-consistency') ? { consistency: false } : {}), ...(opt('--precision') ? { precision: opt('--precision') } : {}) });
 const ctx = processDoc(doc, S, (p) => process.stderr.write(`  pass ${p}\n`));
 if (has('--ai')) {
   // semantic check: exact structure from the engine, meaning from the local model

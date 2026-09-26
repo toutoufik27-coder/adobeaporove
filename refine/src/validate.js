@@ -6,6 +6,12 @@
 // original (with their merge partners) and the whole check runs again. When the output
 // still cannot be proven, the ORIGINAL is returned.
 //
+// After an intended change (restoration to the source image, repetition consistency)
+// the reference is the corrected drawing. The change itself is checked in the browser
+// first (intended.js: visible exactly where the engine made it, in the same colour);
+// when it is not confirmed, or cannot be (STRICT without a browser), the original input
+// is kept, never the unverified correction.
+//
 // Two explicit modes:
 //   STRICT    the browser render is required. Without a browser oracle nothing is
 //             accepted: the original is kept and the reason is reported.
@@ -28,6 +34,8 @@ import { expand } from './pathdata.js';
 import { apply } from './matrix.js';
 import { maxScale } from './raster.js';
 import { probe } from './memprobe.js';
+import { INTENDED } from './process.js';
+import { verifyIntended } from './intended.js';
 
 // Browser renders of two SVG texts on the same grid. null when no browser is available.
 export async function browserPair(origText, outText, side = 600) {
@@ -146,27 +154,31 @@ function offenders(ctx, state, mask, ref) {
 }
 const toPx = (view, m, p) => { const q = apply(m, p); return [(q[0] - view.x) * view.k, (q[1] - view.y) * view.k]; };
 
-// The browser oracle for one document: the reference (the original) is rendered once.
-// The reference is the input text as given; when image restoration changed the drawing
-// on purpose, it is the restored state. The sanitized original as the engine writes it
-// is compared with the input too (serializer / sanitizer fidelity), so a writer bug is
-// never hidden by rendering both sides through the same writer.
-async function prepareOracle(ctx, restored, origState) {
+// The browser oracle for one document: the reference is rendered once. It is the
+// original, or the corrected drawing after an intended change (`stage`). The sanitized
+// original as the engine writes it is always compared with the input too (serializer /
+// sanitizer fidelity), so a writer bug is never hidden by rendering both sides through
+// the same writer. An intended change is checked in the browser here (intended.js).
+async function prepareOracle(ctx, stage, refState, trueState) {
   const { doc, S } = ctx;
   const browser = await getBrowser();
-  if (!browser) return { oracle: null, status: await oracleStatus(), fidelity: null };
+  if (!browser) return { oracle: null, status: await oracleStatus(), fidelity: null, intended: null };
   const rv = renderViewFor(doc, S.raster || 700);
-  const written = restored ? exportSVG(doc, origState, { pretty: false }) : exportSVG(doc, origState, { exact: true, pretty: false });
-  const W = await browser.render(written, rv.cssW, rv.cssH);
+  const exact = exportSVG(doc, trueState, { exact: true, pretty: false });
+  const T = await browser.render(exact, rv.cssW, rv.cssH);
+  const written = stage ? exportSVG(doc, refState, { pretty: false }) : null;
+  const W = stage ? await browser.render(written, rv.cssW, rv.cssH) : T;
   let fidelity = null;
-  if (!restored && doc.sourceText != null) {
+  if (doc.sourceText != null) {
     try {
       const raw = await browser.render(doc.sourceText, rv.cssW, rv.cssH);
-      const c = compare(raw.img, W.img, rv.view, { radius: 1 });
+      const c = compare(raw.img, T.img, rv.view, { radius: 1 });
       fidelity = { ...stat(c), ok: c.solid === 0 && c.visibleShare === 0, sanitized: doc.removed.length };
     } catch (err) { fidelity = { ok: false, error: String(err.message || err), sanitized: doc.removed.length }; }
   }
-  return { oracle: { browser, ref: W.img, rv }, status: { available: true, exe: browser.exe, reason: null }, fidelity };
+  // the texts the browser drew, drawn again by the internal renderer on the same grid
+  const intended = stage ? { stage, browserVerified: true, ...verifyIntended(T.img, W.img, render(loadSVG(exact), rv.view, { orig: true }), render(loadSVG(written), rv.view, { orig: true }), rv.view) } : null;
+  return { oracle: { browser, ref: W.img, rv }, status: { available: true, exe: browser.exe, reason: null }, fidelity, intended };
 }
 
 // opts: export options. o.validation: STRICT (default) or FALLBACK; o.browser = false
@@ -174,12 +186,18 @@ async function prepareOracle(ctx, restored, origState) {
 export async function finalizeOutput(ctx, opts = {}, { browser = true, validation = STRICT, maxRounds = 10 } = {}) {
   const { doc } = ctx;
   if (validation !== STRICT && validation !== FALLBACK) throw new Error(`unknown validation mode "${validation}"`);
-  // the reference: the original, or the drawing corrected to the source image (an intended change)
-  const ri = ctx.history.findIndex((h) => h.name === 'Restored');
-  const origState = ri > 0 ? ctx.history[ri].state.map((s) => ({ ...s })) : doc.elements.map((e) => ({ subpaths: e.orig, removed: false, digits: undefined, flat: null, ctm: e.origCtm || e.ctm }));
-  const prep = browser ? await prepareOracle(ctx, ri > 0, origState) : { oracle: null, status: { available: false, exe: null, reason: 'browser validation disabled (--no-browser)' }, fidelity: null };
+  // the reference: the original, or the drawing after the last intended change
+  // (restoration to the source image, repetition consistency)
+  let ri = -1;
+  ctx.history.forEach((h, k) => { if (INTENDED.includes(h.name)) ri = k; });
+  const stage = ri > 0 ? ctx.history[ri].name : null;
+  const trueState = doc.elements.map((e) => ({ subpaths: e.orig, removed: false, digits: undefined, flat: null, ctm: e.origCtm || e.ctm }));
+  const origState = stage ? ctx.history[ri].state.map((s) => ({ ...s })) : trueState;
+  const prep = browser ? await prepareOracle(ctx, stage, origState, trueState) : { oracle: null, status: { available: false, exe: null, reason: 'browser validation disabled (--no-browser)' }, fidelity: null, intended: null };
   const { oracle, fidelity } = prep;
-  const common = { mode: validation, browserStatus: prep.status, fidelity };
+  // an intended change not drawn by a browser is measured by the internal renderer only
+  const intended = prep.intended || (stage ? { stage, browserVerified: false } : null);
+  const common = { mode: validation, browserStatus: prep.status, fidelity, intended, reference: stage || 'Original' };
   let state = ctx.history[ctx.history.length - 1].state.map((s) => ({ ...s }));
   const rolledBack = [], rounds = [];
   // unit "idx" returns the element (and its merge partners); "idx:sub" one contour
@@ -201,13 +219,19 @@ export async function finalizeOutput(ctx, opts = {}, { browser = true, validatio
   };
   // the original, when nothing else can be proven (its own checks are reported too)
   const keepOriginal = async (reason) => {
+    const raw = fidelity && !fidelity.ok && !fidelity.sanitized && doc.sourceText != null;
+    if (stage) {
+      // the reference is the corrected drawing, so the original input is written exactly
+      // (the fidelity check compared that text with the input in the browser)
+      const text = raw ? doc.sourceText : exportSVG(doc, trueState, { exact: true, pretty: opts.pretty ?? !opts.minify });
+      return { ...common, reference: 'Original', ok: false, kept: 'original', text, state: trueState, rolledBack, rounds, integrity: integrity(text), internal: null, browser: null, browserVerified: false, level: 'original-kept', reason };
+    }
     let res = await checkState(ctx, origState, opts, oracle);
     // the export options themselves (restructuring, minified numbers of changed elements)
     // must not change the original either: when they do, the original is written as is
     if (!res.ok) { const r2 = await checkState(ctx, origState, { exact: true, pretty: opts.pretty ?? !opts.minify }, oracle); if (r2.ok || !res.internalOk) res = r2; }
     // a writer that cannot reproduce the input (fidelity failed with nothing sanitized
     // away): the input text itself is the faithful original
-    const raw = fidelity && !fidelity.ok && !fidelity.sanitized && doc.sourceText != null;
     return { ...common, ok: false, kept: 'original', text: raw ? doc.sourceText : res.text, state: origState, rolledBack, rounds, integrity: raw ? integrity(doc.sourceText) : res.integrity, internal: res.internal, browser: res.browser, browserVerified: false, level: 'original-kept', reason };
   };
   // The input and the engine's copy of it differ in the browser. With nothing removed
@@ -226,9 +250,11 @@ export async function finalizeOutput(ctx, opts = {}, { browser = true, validatio
     // STRICT without the source of truth: report what the internal renderer sees, accept nothing
     const res = await checkState(ctx, state, opts, null);
     rounds.push({ ok: false, failures: res.failures, internal: res.internal, browser: null });
-    const out = await keepOriginal(`STRICT validation needs the browser oracle, which is unavailable (${prep.status.reason}); the processed result was not accepted. FALLBACK mode accepts an internal-only result, reported as not browser-verified`);
+    const out = await keepOriginal(`STRICT validation needs the browser oracle, which is unavailable (${prep.status.reason}); the processed result was not accepted${stage ? `, nor the intended change (${stage})` : ''}. FALLBACK mode accepts an internal-only result, reported as not browser-verified`);
     return { ...out, processedInternal: res.internal, processedInternalOk: res.internalOk };
   }
+  // the intended change must look in the browser as the engine measured it
+  if (intended && intended.browserVerified && !intended.ok) return keepOriginal(`intended change (${stage}) not confirmed by the browser: ${intended.outside} px changed where the engine changed nothing, ${intended.disagree} of ${intended.interiorPixels} px inside the change drawn in another colour`);
   for (let r = 0; r < maxRounds; r++) {
     const res = await checkState(ctx, state, opts, oracle);
     rounds.push({ ok: res.ok, failures: res.failures, internal: res.internal, browser: res.browser });

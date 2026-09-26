@@ -103,6 +103,13 @@ export const DEFECTS = {
     bad: `  <path fill="#264653" d="M50 50L150.3 50L150 49.7L150 150L50 150Z"/>`,
     expected: `  <path fill="#264653" d="M50 50L150 50L150 150L50 150Z"/>`,
   },
+  // 11. four mirrored corner pieces of a frame: the tracer gave one of them the panel's
+  // colour (it was lit a little lighter), the other three agree
+  'inconsistent-repeat': {
+    kind: 'repetition consistency', count: 1,
+    bad: `  <path fill="#1d3557" d="M20 20H180V180H20Z"/>\n  <path fill="#f1faee" d="M40 60V140H60V60ZM140 60V140H160V60ZM42 158L42 142L58 158Z"/>\n  <path fill="#a8dadc" d="M42 42L58 42L42 58ZM158 42L142 42L158 58ZM158 158L142 158L158 142Z"/>`,
+    expected: `  <path fill="#1d3557" d="M20 20H180V180H20Z"/>\n  <path fill="#f1faee" d="M40 60V140H60V60ZM140 60V140H160V60Z"/>\n  <path fill="#a8dadc" d="M42 42L58 42L42 58ZM158 42L142 42L158 58ZM158 158L142 158L158 142ZM42 158L42 142L58 158Z"/>`,
+  },
   // 10. a row of the same dot, every copy distorted differently
   'distorted-repeated-shapes': {
     kind: 'primitive reconstruction', count: 5,

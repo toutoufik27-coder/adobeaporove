@@ -6,9 +6,9 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const kb = (n) => (n / 1024).toFixed(1) + ' KB';
 const pct = (a, b) => (b ? Math.round((1 - a / b) * 100) : 0);
 const MODE_AR = { safe: 'آمنة', balanced: 'متوازنة', professional: 'احترافية', aggressive: 'قوية' };
-const STAGE_AR = { Restored: 'مطابقة الصورة', Semantic: 'تصحيح المعنى', Original: 'الأصل', Cleaned: 'التنظيف', Simplified: 'التبسيط', Reconstructed: 'إعادة بناء المنحنيات', Shapes: 'الأشكال', Final: 'النهائي' };
-const PASS_AR = { 'image restoration': 'المطابقة مع الصورة الأصلية', 'structural cleanup': 'تنظيف البنية', 'duplicate point cleanup': 'النقاط المكررة', 'micro-segment cleanup': 'المقاطع الدقيقة', 'collinear simplification': 'النقاط على خط واحد', 'curve analysis': 'تحليل المنحنيات', 'curve fitting': 'ملاءمة المنحنيات', 'shape recognition': 'التعرف على الأشكال', 'topology validation': 'تحقق الطوبولوجيا', 'visual validation': 'التحقق البصري', 'final optimization': 'التحسين النهائي' };
-const ISSUE_AR = { hidden: 'أشكال مخفية بالكامل تحت أشكال أعلى', 'micro-segments': 'مقاطع دقيقة جداً (ضجيج)', 'duplicate-points': 'نقاط مكررة أو مقاطع بطول صفر', 'collinear-points': 'نقاط زائدة على خط مستقيم', kinks: 'انكسارات صغيرة في الحواف', 'self-intersections': 'تقاطعات ذاتية', 'open-contour': 'حدود مفتوحة في شكل معبأ', 'near-primitive': 'أشكال شبه هندسية (دائرة/مستطيل) مرسومة بعقد كثيرة', unsupported: 'عناصر محفوظة كما هي', security: 'عناصر غير آمنة حُذفت', warning: 'تنبيهات', 'invalid-path': 'بيانات مسار غير صالحة' };
+const STAGE_AR = { Restored: 'مطابقة الصورة', Consistent: 'توحيد الأجزاء المتكررة', Semantic: 'تصحيح المعنى', Original: 'الأصل', Cleaned: 'التنظيف', Simplified: 'التبسيط', Reconstructed: 'إعادة بناء المنحنيات', Shapes: 'الأشكال', Final: 'النهائي' };
+const PASS_AR = { 'image restoration': 'المطابقة مع الصورة الأصلية', 'repetition consistency': 'توحيد الأجزاء المتكررة', 'structural cleanup': 'تنظيف البنية', 'duplicate point cleanup': 'النقاط المكررة', 'micro-segment cleanup': 'المقاطع الدقيقة', 'collinear simplification': 'النقاط على خط واحد', 'curve analysis': 'تحليل المنحنيات', 'curve fitting': 'ملاءمة المنحنيات', 'shape recognition': 'التعرف على الأشكال', 'topology validation': 'تحقق الطوبولوجيا', 'visual validation': 'التحقق البصري', 'final optimization': 'التحسين النهائي' };
+const ISSUE_AR = { hidden: 'أشكال مخفية بالكامل تحت أشكال أعلى', 'micro-segments': 'مقاطع دقيقة جداً (ضجيج)', 'duplicate-points': 'نقاط مكررة أو مقاطع بطول صفر', 'collinear-points': 'نقاط زائدة على خط مستقيم', kinks: 'انكسارات صغيرة في الحواف', 'self-intersections': 'تقاطعات ذاتية', 'open-contour': 'حدود مفتوحة في شكل معبأ', 'near-primitive': 'أشكال شبه هندسية (دائرة/مستطيل) مرسومة بعقد كثيرة', unsupported: 'عناصر محفوظة كما هي', 'inconsistent-repeat': 'جزء متكرر متناظر بلون مختلف عن نسخه الأخرى', security: 'عناصر غير آمنة حُذفت', warning: 'تنبيهات', 'invalid-path': 'بيانات مسار غير صالحة' };
 const SETTINGS = [
   ['simplify', 'تسامح التبسيط (‰ من حجم التصميم)', 'number', 0.1],
   ['curve', 'تسامح المنحنيات (‰)', 'number', 0.1],
@@ -21,6 +21,7 @@ const SETTINGS = [
   ['maxAreaError', 'أقصى تغير في مساحة الحد (نسبة)', 'number', 0.001],
   ['regionMax', 'أقصى خطأ بصري لكل شكل (نسبة)', 'number', 0.001],
   ['symmetry', 'تصحيح التناظر', 'bool'],
+  ['consistency', 'توحيد لون الأجزاء المتكررة المتناظرة', 'bool'],
   ['topologyRepair', 'إصلاح الطوبولوجيا', 'bool'],
   ['strokePreservation', 'حماية المسارات ذات الحدود (stroke)', 'bool'],
   ['flattenTransforms', 'تطبيق التحويلات (transform) على الإحداثيات', 'bool'],
@@ -28,7 +29,9 @@ const SETTINGS = [
   ['mergePaths', 'دمج المسارات المتطابقة المتجاورة', 'bool'],
 ];
 
-// Engine messages are English (logs, CLI); the page shows them in Arabic.
+// Engine messages are English (logs, CLI); the page shows them in Arabic. Colour codes
+// are isolated left-to-right runs, so "#def1fe" does not turn into "def1fe#" in RTL text.
+const ltr = (s) => '\u2066' + s + '\u2069';
 const TR = [
   [/^outline moved more than ([\d.]+)% of the artwork \(all steps together, from the original contour\)$/, 'الحافة ستبتعد أكثر من $1% عن الحد الأصلي (مجموع كل الخطوات)'],
   [/^area changed by ([\d.]+)% \(limit ([\d.]+)%\)$/, 'تتغير المساحة بنسبة $1% (الحد $2%)'],
@@ -91,14 +94,29 @@ const TR = [
   [/^(\d+) shape\(s\) that are almost perfect circles \/ rectangles$/, '$1 شكل شبه دائرة أو مستطيل مثالي'],
   [/^gradients \/ masks \/ strokes present.*$/, 'يحتوي تدرجات / أقنعة / حدود: إعادة بناء محافظة'],
   [/^the geometry is already clean$/, 'الهندسة نظيفة أصلاً'],
-  [/^closer to the source image: mean ΔE ([\d.]+) -> ([\d.]+), wrong pixels (\d+) -> (\d+)$/, 'أقرب إلى الصورة الأصلية: ΔE $1 ← $2، بكسلات خاطئة $3 ← $4'],
-  [/^not closer to the source image \(mean ΔE ([\d.]+) -> ([\d.]+), wrong pixels (\d+) -> (\d+)\)$/, 'ليس أقرب إلى الصورة الأصلية (ΔE $1 ← $2، بكسلات خاطئة $3 ← $4)'],
+  [/^(\d+) repeated mirrored part\(s\) drawn in another colour than their copies$/, '$1 جزء متكرر متناظر مرسوم بلون مختلف عن نسخه الأخرى'],
+  [/^the professional mode recolours the repeated part$/, 'الوضع الاحترافي يوحّد لون الجزء المتكرر'],
+  [/^drawn in (#[0-9a-f]{6}) while (\d+) mirror copies are (#[0-9a-f]{6})$/, (m, a, n, b) => `مرسوم باللون ${ltr(a)} بينما ${n} نسخ متناظرة باللون ${ltr(b)}`],
+  [/^closer to the source image: mean ΔE ([\d.]+) -> ([\d.]+), wrong pixels (\d+) -> (\d+), distance to the image's edges ([\d.]+) -> ([\d.]+) px \(90 % within ([\d.]+) -> ([\d.]+) px\)$/, 'أقرب إلى الصورة الأصلية: ΔE $1 ← $2، بكسلات خاطئة $3 ← $4، بُعد الحافة عن حواف الصورة $5 ← $6 بكسل (90% ضمن $7 ← $8)'],
+  [/^not closer to the source image \(mean ΔE ([\d.]+) -> ([\d.]+), wrong pixels (\d+) -> (\d+), distance to the image's edges ([\d.]+) -> ([\d.]+) px \(90 % within ([\d.]+) -> ([\d.]+) px\)\)$/, 'ليس أقرب إلى الصورة الأصلية (ΔE $1 ← $2، بكسلات خاطئة $3 ← $4، بُعد الحافة عن حواف الصورة $5 ← $6 بكسل)'],
+  [/^creates a spike \(the outline turns back by (\d+)°\)$/, 'ينشئ نتوءاً حاداً (الحافة ترتد بزاوية $1°)'],
+  [/^colour (#[0-9a-f]{6}) -> (#[0-9a-f]{6}), like the other copies(?: \(in the source image it looks like the other copies: ΔE ([\d.]+) to the nearest one, ([\d.]+) among them\))?$/, (m, a, b, c, d) => `اللون ${ltr(a)} ← ${ltr(b)} مثل النسخ الأخرى${c ? ` (في الصورة الأصلية تشبه النسخ الأخرى: ΔE ${c} عن أقربها، و${d} بينها)` : ''}`],
+  [/^(\d+) mirror copies, (\d+) of them (#[0-9a-f]{6})$/, (m, a, b, c) => `${a} نسخ متناظرة، ${b} منها باللون ${ltr(c)}`],
+  [/^no clear majority colour \((.*)\)$/, (m, a) => `لا يوجد لون غالب واضح (${ltr(a)})`],
+  [/^the source image contradicts it \(inside the copy ΔE ([\d.]+) to the nearest other copy, which differ by up to ([\d.]+) among themselves\)$/, 'الصورة الأصلية تخالف ذلك (داخل النسخة ΔE $1 عن أقرب نسخة أخرى، والنسخ الأخرى تختلف بينها حتى $2)'],
+  [/^(\d+) px outside the copy would change \(paint order or overlap\)$/, '$1 بكسل خارج النسخة سيتغير (ترتيب الرسم أو تداخل)'],
+  [/^(\d+) px of the copy are covered by another shape now: moving it would change more than its colour$/, '$1 بكسل من النسخة مغطاة بشكل آخر: نقلها سيغيّر أكثر من لونها'],
+  [/^the copy would not be drawn in (#[0-9a-f]{6}) \((\d+) of (\d+) px\)$/, (m, a, b, c) => `النسخة لن تُرسم باللون ${ltr(a)} (${b} من ${c} بكسل)`],
+  [/^the two elements are in different coordinate systems$/, 'العنصران في نظامي إحداثيات مختلفين'],
+  [/^singular transform$/, 'تحويل غير قابل للعكس'],
+  [/^receives a copy from element #(\d+)$/, 'يستقبل نسخة من العنصر #$1'],
+  [/^the copy is drawn in the majority colour$/, 'النسخة تُرسم باللون الغالب'],
   [/^too many nodes for the corrected outline$/, 'الحافة المصححة تحتاج عقداً كثيرة'],
   [/^outline moved to the source image$/, 'نقل الحافة إلى مكانها في الصورة'],
   [/^difference to the source image: mean ΔE ([\d.]+) -> ([\d.]+), wrong pixels ([\d.]+)% -> ([\d.]+)%$/, 'الفرق عن الصورة الأصلية: ΔE $1 ← $2، بكسلات خاطئة $3% ← $4%'],
 ];
 const SHAPE_AR = { circle: 'دائرة', ellipse: 'بيضوي', rectangle: 'مستطيل', 'rounded-rectangle': 'مستطيل بزوايا دائرية', triangle: 'مثلث', polygon: 'مضلع', quadrilateral: 'رباعي' };
-const OP_AR = { 'restore outline': 'إعادة الحافة إلى الصورة', 'image fidelity': 'المطابقة مع الصورة', 'empty element': 'عنصر فارغ', 'invisible element': 'عنصر غير مرئي', 'degenerate contour': 'حد بدون مساحة', 'close open contour': 'إغلاق حد مفتوح', 'hidden element': 'عنصر مخفي', 'hidden contours': 'حدود مخفية', 'zero-length segment': 'مقطع بطول صفر', 'near-duplicate point': 'نقطة شبه مكررة', 'micro-segment': 'مقطع دقيق', 'collinear points': 'نقاط على خط واحد', 'curve reconstruction': 'إعادة بناء منحنى', 'symmetry correction': 'تصحيح تناظر', 'topology rollback': 'إرجاع (طوبولوجيا)', 'object rollback': 'إرجاع شكل', 'contour rollback': 'إرجاع حد', 'global check': 'التحقق الكلي', 'merge paths': 'دمج مسارات', precision: 'الدقة العشرية', 'flatten transform': 'تطبيق التحويل', 'tiny artifact': 'إزالة شائبة صغيرة', 'duplicate geometry': 'شكل مكرر', 'join broken stroke': 'وصل خط مقطوع', 'self-intersection loop': 'حلقة تقاطع ذاتي', 'kink repair': 'إصلاح نقطة تحكم شاذة' };
+const OP_AR = { 'restore outline': 'إعادة الحافة إلى الصورة', 'repetition consistency': 'توحيد جزء متكرر', 'image fidelity': 'المطابقة مع الصورة', 'empty element': 'عنصر فارغ', 'invisible element': 'عنصر غير مرئي', 'degenerate contour': 'حد بدون مساحة', 'close open contour': 'إغلاق حد مفتوح', 'hidden element': 'عنصر مخفي', 'hidden contours': 'حدود مخفية', 'zero-length segment': 'مقطع بطول صفر', 'near-duplicate point': 'نقطة شبه مكررة', 'micro-segment': 'مقطع دقيق', 'collinear points': 'نقاط على خط واحد', 'curve reconstruction': 'إعادة بناء منحنى', 'symmetry correction': 'تصحيح تناظر', 'topology rollback': 'إرجاع (طوبولوجيا)', 'object rollback': 'إرجاع شكل', 'contour rollback': 'إرجاع حد', 'global check': 'التحقق الكلي', 'merge paths': 'دمج مسارات', precision: 'الدقة العشرية', 'flatten transform': 'تطبيق التحويل', 'tiny artifact': 'إزالة شائبة صغيرة', 'duplicate geometry': 'شكل مكرر', 'join broken stroke': 'وصل خط مقطوع', 'self-intersection loop': 'حلقة تقاطع ذاتي', 'kink repair': 'إصلاح نقطة تحكم شاذة' };
 const ar = (s) => { s = String(s ?? ''); for (const [re, to] of TR) if (re.test(s)) return s.replace(re, to); return s; };
 const opAr = (op) => OP_AR[op] || (/^(\S+) reconstruction$/.test(op) ? 'إعادة بناء ' + (SHAPE_AR[op.split(' ')[0]] || op) : op);
 
@@ -111,7 +129,7 @@ const st = {
 let worker = null;
 function startWorker() {
   if (worker) worker.terminate();
-  worker = new Worker(new URL('worker.js?v=2', import.meta.url), { type: 'module' });
+  worker = new Worker(new URL('worker.js?v=3', import.meta.url), { type: 'module' });
   worker.onmessage = (e) => handle(e.data);
   worker.onerror = (e) => busy(false, 'خطأ: ' + e.message);
 }
@@ -301,11 +319,11 @@ function showReport(d) {
     <div class="kv">
       <span>نقاط زائدة حُذفت</span><b>${c.removedPoints}</b><span>مقاطع بُسّطت</span><b>${c.simplifiedSegments}</b>
       <span>منحنيات أعيد بناؤها</span><b>${c.reconstructedCurves}</b><span>أشكال هندسية اكتُشفت</span><b>${c.detectedShapes}</b>
-      <span>تصحيح تناظر</span><b>${c.symmetry}</b><span>مسارات دُمجت</span><b>${c.mergedPaths}</b>
+      <span>تصحيح تناظر</span><b>${c.symmetry}</b><span>أجزاء متكررة وُحّد لونها</span><b>${c.consistency || 0}</b><span>مسارات دُمجت</span><b>${c.mergedPaths}</b>
       <span>أجزاء مخفية حُذفت</span><b>${c.removedHidden}</b><span>تعديلات مرفوضة</span><b>${c.rejected}</b></div>
     ${r.repairVsOptimization ? repairHTML(r.repairVsOptimization) : ''}
-    <h2 style="margin-top:10px">${r.image ? 'الفرق البصري بعد المطابقة مع الصورة' : 'الفرق البصري عن الأصل'}</h2>
-    ${r.image ? '<p class="muted">بعد إعادة الحواف إلى الصورة، تُقاس بقية المراحل (التبسيط والمنحنيات) على الرسم المصحح حتى لا تُفسده.</p>' : ''}
+    <h2 style="margin-top:10px">${r.image ? 'الفرق البصري بعد المطابقة مع الصورة' : r.reference === 'Consistent' ? 'الفرق البصري بعد توحيد الأجزاء المتكررة' : 'الفرق البصري عن الأصل'}</h2>
+    ${r.image || r.reference === 'Consistent' ? '<p class="muted">بعد التصحيح المقصود (إعادة الحواف إلى الصورة أو توحيد لون الأجزاء المتكررة)، تُقاس بقية المراحل (التبسيط والمنحنيات) على الرسم المصحح حتى لا تُفسده.</p>' : ''}
     <div class="kv"><span>فرق مرئي (بعد تجاهل إزاحة أقل من بكسل)</span><b>${v.visible}%</b><span>بكسلات تغيّرت (صارم)</span><b>${v.pixelDifference}%</b>
     <span>متوسط ΔE</span><b>${v.meanDeltaE}</b><span>فرق بنيوي (SSIM)</span><b>${v.structural}%</b><span>بقع مرئية (بكسل)</span><b>${v.spots}</b></div>
     ${r.image ? `<h2 style="margin-top:10px">المطابقة مع الصورة الأصلية</h2>
@@ -315,7 +333,7 @@ function showReport(d) {
     <p class="muted">الرقم الأول للـSVG الأصلي، والثاني لهذه المرحلة. الجزء الباقي من الخطأ سببه نعومة حواف الصورة (JPEG)، وليس خطأ في الرسم.</p>` : ''}`;
 }
 // Repair and optimization are reported apart: a smaller file is not a repair.
-const TYPE_AR = { 'primitive reconstruction': 'إعادة بناء شكل هندسي', 'geometry correction': 'تصحيح هندسة', 'broken continuity': 'استمرارية مقطوعة', 'malformed geometry': 'هندسة معطوبة', 'accidental artifacts': 'شوائب عَرَضية', 'topology repair': 'إصلاح طوبولوجيا', 'node reduction': 'تقليل العقد', 'path normalization': 'توحيد صيغة المسار', 'precision reduction': 'تقليل الدقة العشرية', 'redundant command removal': 'حذف أوامر زائدة', 'redundant element removal': 'حذف عناصر زائدة' };
+const TYPE_AR = { 'primitive reconstruction': 'إعادة بناء شكل هندسي', 'geometry correction': 'تصحيح هندسة', 'broken continuity': 'استمرارية مقطوعة', 'malformed geometry': 'هندسة معطوبة', 'accidental artifacts': 'شوائب عَرَضية', 'topology repair': 'إصلاح طوبولوجيا', 'repetition consistency': 'توحيد الأجزاء المتكررة', 'node reduction': 'تقليل العقد', 'path normalization': 'توحيد صيغة المسار', 'precision reduction': 'تقليل الدقة العشرية', 'redundant command removal': 'حذف أوامر زائدة', 'redundant element removal': 'حذف عناصر زائدة' };
 function repairHTML(x) {
   const list = (b) => Object.entries(b.byType).map(([k, n]) => `<span>${TYPE_AR[k] || esc(k)}</span><b>${n}</b>`).join('');
   return `<h2 style="margin-top:10px">إصلاح أم تحسين؟</h2>
@@ -328,7 +346,7 @@ function showLog() {
   const log = st.result.log.filter((l) => l.op !== 'analysis');
   const f = st.logFilter;
   const rows = log.filter((l) => f === 'all' || (f === 'accepted' ? l.accepted : l.accepted === false)).slice(0, 400);
-  $('logTable').innerHTML = rows.length ? rows.map((l) => `<tr data-el="${l.el ?? ''}"><td class="${l.accepted ? 'ok' : 'no'}">${l.accepted ? '✓' : '✗'}</td><td><b>${esc(l.label ? ar(l.label) : opAr(l.op))}</b> <span class="muted">${l.label ? esc(opAr(l.op)) : ''}</span><br><span class="muted">${esc(PASS_AR[l.pass] || l.pass)}${l.el != null ? ` · عنصر ${l.el}${l.sub != null ? ' / حد ' + l.sub : ''}` : ''}${l.cls ? ` · ${l.cls[0] === 'repair' ? 'إصلاح' : 'تحسين'}` : ''}${l.evidence && l.evidence.score != null ? ` · الهامش المتبقي ${Math.round(l.evidence.score * 100)}%` : ''}</span><br>${esc(ar(l.reason))}</td></tr>`).join('') : '<tr><td class="muted">لا شيء</td></tr>';
+  $('logTable').innerHTML = rows.length ? rows.map((l) => `<tr data-el="${l.el ?? ''}"><td class="${l.accepted ? 'ok' : l.accepted === false ? 'no' : 'muted'}">${l.accepted ? '✓' : l.accepted === false ? '✗' : 'ℹ'}</td><td><b>${esc(l.label ? ar(l.label) : opAr(l.op))}</b> <span class="muted">${l.label ? esc(opAr(l.op)) : ''}</span><br><span class="muted">${esc(PASS_AR[l.pass] || l.pass)}${l.el != null ? ` · عنصر ${l.el}${l.sub != null ? ' / حد ' + l.sub : ''}` : ''}${l.cls ? ` · ${l.cls[0] === 'repair' ? 'إصلاح' : 'تحسين'}` : ''}${l.evidence && l.evidence.score != null ? ` · الهامش المتبقي ${Math.round(l.evidence.score * 100)}%` : ''}</span><br>${esc(ar(l.reason))}</td></tr>`).join('') : '<tr><td class="muted">لا شيء</td></tr>';
 }
 $('logFilter').onclick = (e) => { const f = e.target.dataset.f; if (!f) return; st.logFilter = f; for (const b of $('logFilter').children) b.setAttribute('aria-pressed', b.dataset.f === f); showLog(); };
 for (const t of ['logTable', 'anTable']) $(t).onclick = (e) => {
@@ -349,17 +367,21 @@ function showExport(d) {
     : `<div class="warn"><b>فشل فحص السلامة — لا يمكن اعتبار الملف «ناتجاً احترافياً»:</b><ul class="issues">${i.errors.slice(0, 10).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
   const b = d.browser, finalStage = st.result && st.stage === st.result.stages.length - 1;
   if (!finalStage) $('integ').innerHTML += '<div class="warn">هذه مرحلة وسيطة: لم تمر بالتحقق النهائي (إعادة التحليل والرسم في المتصفح). المرحلة «النهائي» وحدها يتم التحقق منها.</div>';
+  const iv = b && b.intended, ivText = iv ? (iv.ok ? ` التصحيح المقصود ظهر في المتصفح في مكانه فقط (${iv.changedPixels} بكسل تغيّر، 0 خارج مكانه، وبنفس اللون).` : ` التصحيح المقصود لم يظهر في المتصفح كما قاسه المحرك (${iv.outside} بكسل تغيّر خارج مكانه، ${iv.disagree} بكسل بلون مختلف).`) : '';
   if (b) $('integ').innerHTML += b.pending ? '<div class="muted">التحقق البصري في المتصفح جارٍ…</div>'
-    : b.ok ? `<div class="good">التحقق البصري في المتصفح ناجح: فرق مرئي ${(b.visible * 100).toFixed(3)}% و${b.solid} بكسل بقع.</div>`
-    : `<div class="warn"><b>النتيجة لم تجتز التحقق البصري في المتصفح${b.error ? ' (' + esc(b.error) + ')' : ` (فرق مرئي ${(b.visible * 100).toFixed(3)}%، ${b.solid} بكسل بقع)`}: الملف الأصلي هو المعروض والمُحمَّل.</b></div>`;
+    : b.ok ? `<div class="good">التحقق البصري في المتصفح ناجح: فرق مرئي ${(b.visible * 100).toFixed(3)}% و${b.solid} بكسل بقع${iv ? ' (مقارنة بالرسم بعد التصحيح المقصود)' : ''}.${ivText}</div>`
+    : `<div class="warn"><b>النتيجة لم تجتز التحقق البصري في المتصفح${b.error ? ' (' + esc(b.error) + ')' : ` (فرق مرئي ${(b.visible * 100).toFixed(3)}%، ${b.solid} بكسل بقع)`}: الملف الأصلي هو المعروض والمُحمَّل.</b>${ivText}</div>`;
   $('download').disabled = !i.ok || !!(b && b.pending);
   $('downloadAnyway').hidden = i.ok;
 }
 // Final validation in this browser (the source of truth): the original and the output are
 // drawn by the browser itself on the same grid and compared with the mode's limits. An
-// output that fails is not offered: the original is kept.
-async function browserCheck(origText, outText, S) {
-  const [{ loadSVG }, { renderViewFor }, { compare }] = await Promise.all([import('./src/model.js'), import('./src/viewport.js'), import('./src/metrics.js')]);
+// output that fails is not offered: the original is kept. After an intended change the
+// output is compared with the corrected drawing (refText), and the change itself must
+// show in this browser exactly where, and in the colour, the engine measured it
+// (src/intended.js, the same check as the Node gate).
+async function browserCheck(origText, outText, S, refText = null) {
+  const [{ loadSVG }, { renderViewFor }, { compare }, { render }, { verifyIntended }] = await Promise.all([import('./src/model.js'), import('./src/viewport.js'), import('./src/metrics.js'), import('./src/raster.js'), import('./src/intended.js')]);
   const rv = renderViewFor(loadSVG(origText), S.raster || 700), W = rv.cssW, H = rv.cssH;
   const draw = (text) => new Promise((ok, fail) => {
     const img = new Image(), url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
@@ -374,15 +396,21 @@ async function browserCheck(origText, outText, S) {
     img.src = url;
   });
   const a = await draw(origText), b = await draw(outText);
-  const c = compare(a, b, { W, H }, { radius: 1 });
-  return { ok: c.visibleShare <= S.globalMax && c.solid <= S.maxSolid * 4, visible: c.visibleShare, solid: c.solid };
+  if (!refText) {
+    const c = compare(a, b, { W, H }, { radius: 1 });
+    return { ok: c.visibleShare <= S.globalMax && c.solid <= S.maxSolid * 4, visible: c.visibleShare, solid: c.solid };
+  }
+  const r = await draw(refText);
+  const c = compare(r, b, { W, H }, { radius: 1 });
+  const intended = verifyIntended(a, r, render(loadSVG(origText), rv.view, { orig: true }), render(loadSVG(refText), rv.view, { orig: true }), rv.view);
+  return { ok: c.visibleShare <= S.globalMax && c.solid <= S.maxSolid * 4 && intended.ok, visible: c.visibleShare, solid: c.solid, intended };
 }
 async function verifyInBrowser(m) {
   const d = st.stageData.get(st.stage);
   if (!d || m.dry) return;
   d.browser = { pending: true };
   showExport(d);
-  try { d.browser = await browserCheck(m.original, d.output, m.settings); }
+  try { d.browser = await browserCheck(m.original, d.output, m.settings, m.reference); }
   catch (err) { d.browser = { ok: false, error: String(err.message || err) }; }
   if (!d.browser.ok) { d.rejectedOutput = d.output; d.output = m.original; if (st.applied) mount($('canB'), d.output); }
   showExport(d);
@@ -574,7 +602,7 @@ function showInspector() {
     ${d.editable ? '' : `<p class="muted">غير قابل للتعديل: ${esc(d.reason)}</p>`}${d.removed ? '<p class="warn">حُذف هذا العنصر في هذه المرحلة.</p>' : ''}
     <div class="cols"><div>عقد الأصل<br><b>${d.original.nodes}</b></div><div>عقد الآن<br><b>${d.current.nodes}</b></div><div>حدود الأصل<br><b>${d.original.subpaths.length}</b></div><div>حدود الآن<br><b>${d.current.subpaths.length}</b></div></div>
     <p class="muted"><span class="dot o"></span> الأصل (متقطع) &nbsp; <span class="dot c"></span> النتيجة — المربعات: العقد، الدوائر: نقاط التحكم</p>
-    ${d.log.length ? `<div class="scroll"><table class="log">${d.log.map((l) => `<tr><td class="${l.accepted ? 'ok' : 'no'}">${l.accepted ? '✓' : '✗'}</td><td><b>${esc(l.label ? ar(l.label) : opAr(l.op))}</b>${l.sub != null ? ` <span class="muted">حد ${l.sub}</span>` : ''} — ${esc(ar(l.reason))}</td></tr>`).join('')}</table></div>` : '<p class="muted">لا تعديلات مسجلة لهذا العنصر.</p>'}`;
+    ${d.log.length ? `<div class="scroll"><table class="log">${d.log.map((l) => `<tr><td class="${l.accepted ? 'ok' : l.accepted === false ? 'no' : 'muted'}">${l.accepted ? '✓' : l.accepted === false ? '✗' : 'ℹ'}</td><td><b>${esc(l.label ? ar(l.label) : opAr(l.op))}</b>${l.sub != null ? ` <span class="muted">حد ${l.sub}</span>` : ''} — ${esc(ar(l.reason))}</td></tr>`).join('')}</table></div>` : '<p class="muted">لا تعديلات مسجلة لهذا العنصر.</p>'}`;
 }
 
 

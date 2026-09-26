@@ -2,6 +2,7 @@
 // the real picture (along its normal, between the shape's colour and the colour next
 // to it) and moved there; the outline is then rebuilt (corners + lines / arcs /
 // curves). A candidate is kept only when the shape gets closer to the source image.
+import { outline, corners } from './evidence.js';
 import { apply, invert } from './matrix.js';
 import { render, cropView, makeView } from './raster.js';
 import { lab } from './raster.js';
@@ -105,8 +106,9 @@ export function snapSubpath(ctx, e, i, curImg) {
     const nOut = R[k].nOut;
     Q.push(nOut ? add(R[k], mul(nOut, m)) : R[k].slice());
   }
-  // moving points near corners can fold the outline into tiny loops: cut them out
-  const Qc = removeLoops(Q);
+  // moving points near corners can fold the outline into tiny loops, or push one part
+  // past its neighbours into a spike that turns straight back: both are cut out
+  const Qc = removeSpurs(removeLoops(Q), 2 * px);
   if (Qc.length < 8) return null;
   // rebuild: corners on the corrected outline, simplest fit between them
   const L = Qc.map((q) => apply(inv, q));
@@ -134,6 +136,27 @@ function removeLoops(Q) {
     const { i, j, x } = hit, inner = j - i, outerLen = n - inner;
     // keep the longer side of the crossing
     P = inner <= outerLen ? [...P.slice(0, i + 1), x, ...P.slice(j + 1)] : [x, ...P.slice(i + 1, j + 1)];
+  }
+  return P;
+}
+// Closed polyline without spurs: a point where the outline turns back by more than
+// NEEDLE degrees, measured over `w` on each side, is the tip of a spike. Tips are
+// removed one by one (the sharpest first) until no spike is left.
+function removeSpurs(Q, w) {
+  let P = Q.slice();
+  const turnAt = (i) => {
+    const n = P.length, q = P[i];
+    let a = null, b = null;
+    for (let k = 1; k < n; k++) { const r = P[(i - k + n) % n]; if (Math.hypot(r[0] - q[0], r[1] - q[1]) >= w) { a = r; break; } }
+    for (let k = 1; k < n; k++) { const r = P[(i + k) % n]; if (Math.hypot(r[0] - q[0], r[1] - q[1]) >= w) { b = r; break; } }
+    if (!a || !b) return 0;
+    return turnDeg(norm(sub(q, a)), norm(sub(b, q)));
+  };
+  for (let guard = 0; guard < 400 && P.length > 8; guard++) {
+    let worst = -1, at = -1;
+    for (let i = 0; i < P.length; i++) { const t = turnAt(i); if (t > worst) { worst = t; at = i; } }
+    if (worst <= NEEDLE) break;
+    P = P.filter((_, i) => i !== at);
   }
   return P;
 }
@@ -202,6 +225,12 @@ export function passRestore(ctx) {
   record(ctx, { pass: P, op: 'image fidelity', accepted: after.mean <= before.mean, reason: `difference to the source image: mean ΔE ${before.mean.toFixed(2)} -> ${after.mean.toFixed(2)}, wrong pixels ${(before.badShare * 100).toFixed(2)}% -> ${(after.badShare * 100).toFixed(2)}%` });
 }
 
+const NEEDLE = 150;
+export function newNeedles(cur, cand, u) {
+  const sharp = (sp) => corners(outline(sp, u).poly, sp.closed, NEEDLE, 2 * u);
+  const a = sharp(cur), fresh = sharp(cand).filter((c) => !a.some((q) => Math.hypot(c.p[0] - q.p[0], c.p[1] - q.p[1]) <= 2 * u));
+  return fresh.length ? Math.max(...fresh.map((c) => c.turn)) : 0;
+}
 function judge(ctx, P, e, i, cand) {
   const cur = e.subpaths[i], u = ctx.u / (e.scale || 1);
   const subs = e.subpaths.map((s, k) => (k === i ? cand : s));
@@ -212,6 +241,12 @@ function judge(ctx, P, e, i, cand) {
   if (t0.signature !== t1.signature) return record(ctx, { ...base, accepted: false, reason: 'topology would change (contours / holes / nesting)' });
   const ia = selfIntersections(polyOf(cur, 0.25 * u), 50), ib = selfIntersections(polyOf(cand, 0.25 * u), 50);
   if (ib > ia) return record(ctx, { ...base, accepted: false, reason: `creates self-intersections (${ia} -> ${ib})` });
+  // a spike: the outline turns back on itself (> 150 degrees within 2 u) where the
+  // current outline does not. Snapping to blurred image edges can pull one node past
+  // its neighbours; the needle it leaves is thin enough to improve the pixel error and
+  // is still an artifact
+  const needles = newNeedles(cur, cand, u);
+  if (needles) return record(ctx, { ...base, accepted: false, reason: `creates a spike (the outline turns back by ${needles.toFixed(0)}°)` });
   if (nodesOf([cand]) > Math.max(nodesOf([cur]) * 1.5, nodesOf([cur]) + 10)) return record(ctx, { ...base, accepted: false, reason: 'too many nodes for the corrected outline' });
   const box = (() => { const a = subBox(e, cur), b = subBox(e, cand); return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]; })();
   let crop = cropView(ctx.view, box, 3 * ctx.u + 3 / ctx.view.k, Math.max(1, ctx.src.T.s / ctx.view.k));

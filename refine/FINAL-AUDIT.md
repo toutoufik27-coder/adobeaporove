@@ -15,8 +15,8 @@ Chrome needs `--no-sandbox` when it runs as root; the oracle now adds it only in
 |---|---|---|---|---|---|
 | Before this audit, no browser | 105 | 0 | 1 line (hid 61 checks) | 82.5 s | not measured |
 | Before this audit, Chromium | 166 | 0 | 0 | 95.2 s | 563 MB |
-| **After, no browser** | **136** | **0** | **65** | 144.3 s | 499 MB |
-| **After, Chromium** | **194** | **0** | **7** | 172.2 s | 504 MB |
+| **After, no browser** | **137** | **0** | **65** | 140.6 s | 495 MB |
+| **After, Chromium** | **195** | **0** | **7** | 167.5 s | 498 MB |
 
 - The "before" run with Chromium used the original engine with one change: the oracle
   launch fix (`--no-sandbox` as root). Without that fix, Chromium does not start in
@@ -52,7 +52,7 @@ visible ≤ 0.25 %, mean ΔE ≤ 0.6, 0 solid spots.
 
 Largest differences: christmas-clock 0.178 % (mean ΔE 0.214), clock-14-marks 0.177 %,
 stroke-dash 0.135 %, bakery-icon 0.107 %, winter-clothing-icon 0.050 %,
-deer-frame-icon 0.038 %. All have 0 solid spots. The full table is in section 16.
+deer-frame-icon 0.038 %. All have 0 solid spots. The full table is in section 17.
 
 ## 4. Why a run can slow down or stop (findings)
 
@@ -106,7 +106,7 @@ Individual and sequential processing were compared in the same order:
   | external | 127.4 MB |
   | crop cache | 47.9 MB |
 
-- **Whole test process (VmHWM):** 499 MB without a browser, 504 MB with Chromium,
+- **Whole test process (VmHWM):** 495 MB without a browser, 498 MB with Chromium,
   against 563 MB before.
 - Most of the arrayBuffers peak is garbage not yet collected: after GC it is 21–30 MB.
 
@@ -280,6 +280,11 @@ Each has a regression test in `test/run.js` or `test/defects.js`:
     invisible).
 12. Measurement drift: each step was bounded only against the previous step. There is
     now a whole-chain bound against the reference contour.
+13. Restoration to the source image left a **spike** (the outline turned back by 163°)
+    in one corner of the deer frame. It improved the pixel error, so it was accepted.
+    Found by the before / after check (section 16). Snapped outlines now lose their
+    spurs before the rebuild, and a candidate that still adds a spike is rejected. The
+    test fails on the old code and passes now.
 
 ## 14. Remaining limits and unsupported SVG features
 
@@ -321,7 +326,28 @@ evidence shows:
 Outside that, in particular for SVG features in section 14, the engine protects and
 does not modify; it does not validate them internally.
 
-## 16. Conformance table (internal renderer vs Chromium, 400 px on the long side)
+## 16. Before / after on the sample with its source image
+
+`node test/before-after.js out-dir` (needs a browser). `deer-frame-icon.svg` is traced
+from `deer-frame-source.png`; professional mode, restoration to the image, STRICT.
+
+| | Before | After |
+|---|---|---|
+| Wrong pixels against the source image (ΔE > 20) | 4.00 % | 3.90 % |
+| Mean ΔE against the source image | 4.72 | 4.67 |
+| Nodes | 134 | 130 |
+| Size | 4.3 KB | 3.8 KB |
+| Repairs | — | 4 (geometry correction: outlines moved to the image) |
+| Optimizations | — | 6 |
+| Final validation | — | browser-verified; visible difference to the corrected drawing 0.01 % internal / 0.00 % browser |
+
+- **Frame corner:** the straight diagonal became the arc the image shows.
+- **The rest of the error:** the improvement is small (4.00 → 3.90 %). Most of what is
+  left is the soft, blurred edges of the image, not the drawing.
+- **The spike:** a first run of this check showed a spike in another corner. It is
+  fixed (bug 13).
+
+## 17. Conformance table (internal renderer vs Chromium, 400 px on the long side)
 
 | File | Visible diff | Pixels | Mean ΔE | Solid | Excluded | Result |
 |---|---|---|---|---|---|---|

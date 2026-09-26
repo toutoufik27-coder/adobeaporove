@@ -296,6 +296,12 @@ begin('semantic correction, source image');
   const f = ctx.imageFidelity, out = stateOutput(ctx, ctx.history.length - 1, {});
   ok(ctx.history.some((h) => h.name === 'Restored') && f.final.badShare < f.original.badShare && f.final.mean < f.original.mean && out.integrity.ok,
     `closer to the source image: wrong pixels ${(f.original.badShare * 100).toFixed(2)}% -> ${(f.final.badShare * 100).toFixed(2)}%, mean ΔE ${f.original.mean.toFixed(2)} -> ${f.final.mean.toFixed(2)}`);
+  // snapping to blurred image edges once left a spike (a 157-degree turn back) in a
+  // frame corner: the restored outlines may not turn back where the original did not
+  const { newNeedles } = await import('../src/restore.js');
+  const ri = ctx.history.findIndex((h) => h.name === 'Restored'), spikes = [];
+  doc.elements.forEach((e) => { const st = ctx.history[ri].state[e.idx]; if (e.orig && st.subpaths.length === e.orig.length) st.subpaths.forEach((sp, i) => { if (sp !== e.orig[i] && newNeedles(e.orig[i], sp, ctx.u / (e.scale || 1))) spikes.push(`${e.idx}:${i}`); }); });
+  ok(!spikes.length, `restoration to the source image adds no spike to any outline${spikes.length ? ' (' + spikes.join(', ') + ')' : ''}`);
 }
 begin(null);
 { const { closeBrowser } = await import('../src/browser.js'); await closeBrowser(); }

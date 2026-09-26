@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+import zlib
 
 from ..config import Config
 from ..findings import FileReport, Level
@@ -72,20 +73,52 @@ def _check_svg(report: FileReport, data: bytes) -> None:
 
 def _check_postscript(report: FileReport, data: bytes) -> None:
     text = data.decode("latin-1")
-    box = re.search(r"%%HiResBoundingBox:\s*([-0-9.]+)\s+([-0-9.]+)\s+([-0-9.]+)\s+([-0-9.]+)", text) or re.search(
-        r"%%BoundingBox:\s*([-0-9.]+)\s+([-0-9.]+)\s+([-0-9.]+)\s+([-0-9.]+)", text
-    )
-    if box:
-        x0, y0, x1, y1 = (float(v) for v in box.groups())
-    else:
-        media = re.search(r"/(?:ArtBox|MediaBox)\s*\[\s*([-0-9.]+)\s+([-0-9.]+)\s+([-0-9.]+)\s+([-0-9.]+)\s*\]", text)
-        if not media:
-            return
-        x0, y0, x1, y1 = (float(v) for v in media.groups())
-    report.width, report.height = round(abs(x1 - x0)), round(abs(y1 - y0))
     fonts = re.search(r"%%DocumentFonts:\s*(.+)", text)
     needed = re.search(r"%%DocumentNeededResources:\s*font\s+(.+)", text)
     names = (fonts.group(1).strip() if fonts else "") or (needed.group(1).strip() if needed else "")
     if names and names != "(atend)":
         report.add("vector.live_text", "ip", Level.REVIEW,
                    "الملف يستخدم خطوطاً غير محوّلة إلى مسارات؛ حوّلها إلى outlines", names[:80])
+
+    box = _find_box(text)
+    if box is None and report.kind == "ai":
+        # PDF-based .ai files often keep the page dictionary inside compressed object streams.
+        box = _find_box(_inflate_streams(data))
+    if box is not None:
+        x0, y0, x1, y1 = box
+        report.width, report.height = round(abs(x1 - x0)), round(abs(y1 - y0))
+
+
+_NUM = r"([-0-9.]+)"
+
+
+def _find_box(text: str) -> tuple[float, float, float, float] | None:
+    for pattern in (
+        rf"%%HiResBoundingBox:\s*{_NUM}\s+{_NUM}\s+{_NUM}\s+{_NUM}",
+        rf"%%BoundingBox:\s*{_NUM}\s+{_NUM}\s+{_NUM}\s+{_NUM}",
+        rf"/ArtBox\s*\[\s*{_NUM}\s+{_NUM}\s+{_NUM}\s+{_NUM}\s*\]",
+        rf"/MediaBox\s*\[\s*{_NUM}\s+{_NUM}\s+{_NUM}\s+{_NUM}\s*\]",
+    ):
+        m = re.search(pattern, text)
+        if m:
+            try:
+                return tuple(float(v) for v in m.groups())  # type: ignore[return-value]
+            except ValueError:
+                continue
+    return None
+
+
+def _inflate_streams(data: bytes, attempts: int = 300) -> str:
+    """Text of the first compressed streams that mention a page box (bounded work on big files)."""
+    for n, m in enumerate(re.finditer(rb"(?<!end)stream\r?\n", data)):
+        if n >= attempts:
+            break
+        try:
+            chunk = zlib.decompressobj().decompress(data[m.end() : m.end() + 1_000_000], 1_000_000)
+        except zlib.error:
+            continue
+        if b"Box" in chunk:
+            text = chunk.decode("latin-1")
+            if _find_box(text):
+                return text
+    return ""

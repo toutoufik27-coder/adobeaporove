@@ -1,5 +1,6 @@
-# إعدادات Quality Guard. انسخ هذا الملف وعدّل ما تحتاجه فقط، ثم شغّل:
+# إعدادات Quality Guard لسطر الأوامر. انسخ هذا الملف وعدّل ما تحتاجه فقط، ثم شغّل:
 #   qguard FOLDER --config my-config.toml
+# في التطبيق تُعدَّل أهم الحدود من زر الإعدادات مباشرة.
 # القيم أدناه هي القيم الافتراضية.
 
 [technical]
@@ -11,7 +12,7 @@
 # png_min_content_area = 0.2
 # png_min_transparent = 0.02
 # jpeg_quality_review = 75
-# jpeg_quality_reject = 50
+# jpeg_quality_reject = 40
 
 [quality]
 # sharpness_review = 0.6
@@ -22,6 +23,11 @@
 # noise_reject = 7.0
 # highlight_clip_review = 0.2
 # shadow_clip_review = 0.3
+# bright_mean_review = 225.0
+# dark_mean_review = 35.0
+# white_background_level = 245
+# black_background_level = 10
+# background_border_share = 0.6
 # tile_size = 256
 # max_tiles = 400
 
@@ -37,8 +43,21 @@
 # keywords_min = 5
 # extra_blocklist = ""
 
+[local_ai]
+# enabled = true
+# ocr = true
+# faces = true
+# gpu = true
+# ocr_max_side = 2560
+# ocr_confidence = 0.4
+# face_score = 0.85
+# face_min_share = 0.025
+
 [vision]
 # model = "claude-opus-5"
 # max_side = 1568
 # workers = 4
 # effort = ""
+
+[performance]
+# jobs = 0

@@ -45,9 +45,23 @@ def _rank(r: FileReport) -> tuple:
     return (int(worst), -r.metrics.get("sharpness", 0.0), -r.megapixels, r.name)
 
 
+def _close_pairs(items: list[FileReport], limit: int) -> list[tuple[int, int, int]]:
+    """(i, j, distance) for every pair within limit, vectorized in blocks so 10,000 files stay fast."""
+    hashes = np.array([r.phash for r in items], dtype=np.uint64)
+    mirrors = np.array([r.phash_mirror for r in items], dtype=np.uint64)
+    pairs = []
+    for start in range(0, len(items), 1024):
+        block = hashes[start : start + 1024, None]
+        d = np.minimum(np.bitwise_count(block ^ hashes[None, :]), np.bitwise_count(block ^ mirrors[None, :]))
+        for i, j in zip(*np.nonzero(d <= limit), strict=True):
+            if j > i + start:
+                pairs.append((int(i + start), int(j), int(d[i, j])))
+    return pairs
+
+
 def check_similarity(reports: list[FileReport], config: Config) -> None:
     sim = config.similarity
-    items = [r for r in reports if r.phash is not None]
+    items = [r for r in reports if r.phash is not None and r.phash_mirror is not None]
     parent = list(range(len(items)))
 
     def find(i: int) -> int:
@@ -57,14 +71,12 @@ def check_similarity(reports: list[FileReport], config: Config) -> None:
         return i
 
     near: dict[int, set[int]] = {i: set() for i in range(len(items))}
-    for i in range(len(items)):
-        for j in range(i + 1, len(items)):
-            d = distance(items[i], items[j])
-            if d <= sim.similar_distance:
-                parent[find(i)] = find(j)
-            if d <= sim.near_duplicate_distance:
-                near[i].add(j)
-                near[j].add(i)
+    for i, j, d in _close_pairs(items, max(sim.similar_distance, sim.near_duplicate_distance)):
+        if d <= sim.similar_distance:
+            parent[find(i)] = find(j)
+        if d <= sim.near_duplicate_distance:
+            near[i].add(j)
+            near[j].add(i)
 
     groups: dict[int, list[int]] = {}
     for i in range(len(items)):

@@ -8,10 +8,13 @@ dynamic = ["version"]
 description = "Checks images against Adobe Stock's acceptance rules before upload and sorts them into pass / review / reject."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["pillow>=10.0", "numpy>=1.26"]
+dependencies = ["pillow>=10.0", "numpy>=2.0"]
 
 [project.optional-dependencies]
 vision = ["anthropic>=1.8"]
+# Text and face detection on this computer. On Windows, install the CUDA build of PyTorch first
+# (install-gpu-windows.bat does it) or EasyOCR runs on the CPU.
+gpu = ["easyocr>=1.7", "opencv-python-headless>=4.8"]
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.scripts]
@@ -24,7 +27,7 @@ version = { attr = "quality_guard.__version__" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-quality_guard = ["data/*.txt"]
+quality_guard = ["data/*.txt", "models/*", "ui/*", "ui/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

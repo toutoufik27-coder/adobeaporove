@@ -101,7 +101,9 @@ def test_request_shape_and_cache(reviewer, tmp_path):
     assert call["output_config"]["format"]["schema"] is SCHEMA
     assert [b["type"] for b in call["messages"][0]["content"]] == ["image", "text", "image", "text"]
     assert "Keywords: lemon" in call["messages"][0]["content"][3]["text"]
-    # A second run is served from the cache file.
+    # A second run is served from the cache file, written atomically when the run ends.
+    reviewer.save_cache()
+    assert not (tmp_path / "cache.tmp").exists()
     again = VisionReviewer(Config(), tmp_path / "cache.json")
     again.client = SimpleNamespace(beta=SimpleNamespace(messages=FakeMessages(payload={"unused": True})))
     assert again.fetch(tmp_path / "x.jpg", rep) == CLEAN

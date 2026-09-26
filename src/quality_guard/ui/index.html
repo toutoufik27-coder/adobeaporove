@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quality Guard</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="aurora" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <img src="icon.svg" alt="">
+    <div><b>Quality Guard</b><span>حارس جودتك قبل Adobe Stock</span></div>
+  </div>
+  <nav class="steps" aria-label="مراحل العمل">
+    <span data-step="start">١ · المجلد</span>
+    <span data-step="scan">٢ · الفحص</span>
+    <span data-step="results">٣ · المراجعة</span>
+    <span data-step="apply">٤ · التوزيع</span>
+  </nav>
+  <div class="top-actions">
+    <span class="hw-chip" id="hw-chip" title="جهازك"><i></i><span id="hw-text">…</span></span>
+    <button class="icon-btn" id="btn-settings" aria-label="الإعدادات" title="الإعدادات" data-icon="gear"></button>
+    <button class="icon-btn" id="btn-theme" aria-label="تبديل المظهر" title="فاتح / داكن" data-icon="moon"></button>
+  </div>
+</header>
+
+<main>
+  <!-- 1. Start -->
+  <section id="view-start" class="view" hidden>
+    <div class="hero">
+      <p class="eyebrow"><span class="dot"></span>جاهز للفحص</p>
+      <h1>افحص صورك <span class="grad-text">قبل</span> أن يراها مراجع Adobe</h1>
+      <p class="lede">اختر مجلداً، فيفحص Quality Guard كل صورة بتكبير 100%: الدقة والألوان والحدة والضوضاء والتكرار، والعلامات التجارية والوجوه والنصوص، ثم يوزعها على ثلاثة مجلدات مع سبب مكتوب لكل صورة.</p>
+    </div>
+
+    <div class="start-grid">
+      <div class="card folder-card" id="folder-card">
+        <div class="folder-visual" id="folder-visual" role="button" tabindex="0" aria-label="اختر مجلد الصور">
+          <svg viewBox="0 0 96 96" aria-hidden="true"><defs><linearGradient id="fg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9b7cff"/><stop offset=".55" stop-color="#5b9dff"/><stop offset="1" stop-color="#3dd6f5"/></linearGradient></defs><path d="M10 24a8 8 0 0 1 8-8h20l8 9h32a8 8 0 0 1 8 8v39a8 8 0 0 1-8 8H18a8 8 0 0 1-8-8V24Z" fill="url(#fg)" opacity=".35"/><path d="M10 36a8 8 0 0 1 8-8h60a8 8 0 0 1 8 8v36a8 8 0 0 1-8 8H18a8 8 0 0 1-8-8V36Z" fill="url(#fg)"/><path d="m36 54 9 9 16-17" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <small>انقر لاختيار مجلد الصور</small>
+        </div>
+        <div class="path-row">
+          <input class="field" id="folder-input" dir="ltr" spellcheck="false" autocomplete="off" placeholder="D:\Stock\batch-12" aria-label="مسار مجلد الصور">
+          <button class="btn" id="btn-pick"><span data-icon="folder"></span>تصفّح</button>
+        </div>
+        <div class="recent" id="recent"></div>
+        <p class="hint"><span data-icon="lock"></span>صورك الأصلية لا تُنقل ولا تُعدّل. النتائج تُحفظ في مجلد جديد بجانب مجلدك.</p>
+      </div>
+
+      <div class="card options-card">
+        <h2>طبقات الفحص</h2>
+        <div class="option accent">
+          <span class="opt-icon" data-icon="gauge"></span>
+          <div><b>الفحص التقني والجودة</b><span class="desc">الصيغة، الحجم، الدقة، sRGB، الحدة بتكبير 100%، الضوضاء، الضغط، الإطارات، التكرار، والبيانات الوصفية</span></div>
+          <span class="tag ok">دائماً</span>
+        </div>
+        <label class="option cyan" id="opt-local-row">
+          <span class="opt-icon" data-icon="chip"></span>
+          <div><b>ذكاء اصطناعي على جهازك</b><span class="desc" id="local-desc">يقرأ النصوص (علامات تجارية، علامات مائية، تواريخ، نص مشوّه) ويكشف الوجوه. مجاني وسريع بكرت الشاشة.</span></div>
+          <span class="switch"><input type="checkbox" id="opt-local" aria-label="ذكاء اصطناعي على جهازك"><i></i></span>
+        </label>
+        <label class="option review" id="opt-vision-row">
+          <span class="opt-icon" data-icon="eye"></span>
+          <div><b>مراجعة Claude البصرية</b><span class="desc" id="vision-desc">عيوب الأيدي والأجسام، الشعارات، الأعمال الفنية، المحتوى المحظور، والقيمة التجارية.</span></div>
+          <span class="switch"><input type="checkbox" id="opt-vision" aria-label="مراجعة Claude البصرية"><i></i></span>
+        </label>
+        <label class="option info">
+          <span class="opt-icon" data-icon="layers"></span>
+          <div><b>المجلدات الفرعية</b><span class="desc">افحص كل ما داخل المجلد من مجلدات.</span></div>
+          <span class="switch"><input type="checkbox" id="opt-recursive" aria-label="المجلدات الفرعية"><i></i></span>
+        </label>
+        <div class="start-cta"><button class="btn primary big" id="btn-start"><span data-icon="play"></span>ابدأ الفحص</button></div>
+      </div>
+    </div>
+
+    <div class="rules-strip">
+      <h3>القواعد الإحدى عشرة التي نطابق صورك عليها</h3>
+      <div class="chips" id="rule-chips"></div>
+    </div>
+  </section>
+
+  <!-- 2. Scan -->
+  <section id="view-scan" class="view" hidden>
+    <div class="card scan-stage">
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 200 200" aria-hidden="true">
+          <defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9b7cff"/><stop offset=".55" stop-color="#5b9dff"/><stop offset="1" stop-color="#3dd6f5"/></linearGradient></defs>
+          <circle class="track" cx="100" cy="100" r="88"/>
+          <circle class="bar" id="ring-bar" cx="100" cy="100" r="88" stroke-dasharray="552.9" stroke-dashoffset="552.9"/>
+        </svg>
+        <div class="ring-center"><b class="num" id="pct">0%</b><span class="num" id="count">0 / 0</span></div>
+      </div>
+      <div class="scan-info">
+        <div>
+          <p class="eyebrow"><span class="dot"></span><span id="scan-eyebrow">يعمل الآن</span></p>
+          <h2 id="scan-title">نفحص صورك…</h2>
+          <p class="path" id="scan-folder"></p>
+        </div>
+        <ol class="stages" id="stages">
+          <li data-stage="analyze">الفحص التقني</li>
+          <li data-stage="similar">التشابه</li>
+          <li data-stage="local">ذكاء جهازك</li>
+          <li data-stage="vision">Claude</li>
+        </ol>
+        <div class="live-counts">
+          <div class="pass"><b class="num" id="c-pass">0</b><span>مقبول</span></div>
+          <div class="review"><b class="num" id="c-review">0</b><span>مراجعة</span></div>
+          <div class="reject"><b class="num" id="c-reject">0</b><span>مرفوض</span></div>
+        </div>
+        <p class="current" id="current"></p>
+        <p class="rate num" id="rate"></p>
+        <div class="scan-actions"><button class="btn ghost" id="btn-cancel"><span data-icon="stop"></span>إيقاف الفحص</button></div>
+      </div>
+    </div>
+    <div class="mosaic" id="mosaic" aria-label="آخر الصور المفحوصة"></div>
+  </section>
+
+  <!-- 3. Results -->
+  <section id="view-results" class="view" hidden>
+    <div class="results-head">
+      <div>
+        <p class="eyebrow" id="res-eyebrow"><span class="dot"></span>اكتمل الفحص</p>
+        <h1 id="res-title"></h1>
+        <p class="sub facts-line" id="res-sub"></p>
+      </div>
+      <button class="btn ghost" id="btn-new"><span data-icon="folder"></span>فحص مجلد آخر</button>
+    </div>
+
+    <div class="summary">
+      <button class="stat pass" data-filter="pass"><span class="label"><span data-icon="check"></span>مقبول، جاهز للرفع</span><b class="num" id="s-pass">0</b><span class="bar"><i id="b-pass"></i></span><span class="pct num" id="p-pass"></span></button>
+      <button class="stat review" data-filter="review"><span class="label"><span data-icon="eye"></span>يحتاج نظرك</span><b class="num" id="s-review">0</b><span class="bar"><i id="b-review"></i></span><span class="pct num" id="p-review"></span></button>
+      <button class="stat reject" data-filter="reject"><span class="label"><span data-icon="x"></span>مرفوض</span><b class="num" id="s-reject">0</b><span class="bar"><i id="b-reject"></i></span><span class="pct num" id="p-reject"></span></button>
+      <div class="card donut-card">
+        <svg class="donut" viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="48" stroke="var(--surface-3)"/>
+          <circle id="d-pass" cx="60" cy="60" r="48" stroke="var(--pass)" stroke-dasharray="0 302"/>
+          <circle id="d-review" cx="60" cy="60" r="48" stroke="var(--review)" stroke-dasharray="0 302"/>
+          <circle id="d-reject" cx="60" cy="60" r="48" stroke="var(--reject)" stroke-dasharray="0 302"/>
+        </svg>
+        <div class="donut-legend">
+          <div><strong class="num grad-text" id="d-pct">0%</strong><span class="muted">من صورك جاهزة للرفع</span></div>
+          <p class="muted" id="d-note"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="notices" id="notices"></div>
+
+    <div class="layout">
+      <aside class="card reasons">
+        <h3>أكثر أسباب الرفض والمراجعة</h3>
+        <ul id="reasons"></ul>
+      </aside>
+      <div>
+        <div class="toolbar">
+          <div class="seg" id="seg" role="tablist" aria-label="تصفية">
+            <button data-f="all" class="on">الكل <span class="n num" id="n-all"></span></button>
+            <button data-f="review" class="review">مراجعة <span class="n num" id="n-review"></span></button>
+            <button data-f="reject" class="reject">مرفوض <span class="n num" id="n-reject"></span></button>
+            <button data-f="pass" class="pass">مقبول <span class="n num" id="n-pass"></span></button>
+          </div>
+          <span id="rule-filter"></span>
+          <label class="search"><span data-icon="search"></span><input type="search" id="search" placeholder="ابحث باسم الملف أو السبب" aria-label="بحث"></label>
+          <select class="select" id="sort" aria-label="الترتيب">
+            <option value="priority">الأهم أولاً</option>
+            <option value="name">الاسم</option>
+            <option value="sharp">الأقل حدة</option>
+            <option value="size">الأكبر دقة</option>
+          </select>
+          <label class="size" title="حجم البطاقات"><span data-icon="grid"></span><input type="range" id="size" min="170" max="380" value="240" aria-label="حجم البطاقات"></label>
+        </div>
+        <div class="grid" id="grid"></div>
+        <p class="empty" id="empty" hidden>لا توجد صور تطابق هذا الاختيار.</p>
+      </div>
+    </div>
+
+    <div class="actionbar" id="actionbar">
+      <p class="ab-text" id="ab-text"></p>
+      <button class="btn ghost" id="btn-open-out" hidden><span data-icon="folder"></span>افتح مجلد النتائج</button>
+      <button class="btn ghost" id="btn-report" hidden><span data-icon="doc"></span>التقرير</button>
+      <button class="btn primary" id="btn-apply"><span data-icon="sort"></span>وزّع الملفات على المجلدات</button>
+    </div>
+  </section>
+
+  <section id="view-error" class="view" hidden>
+    <div class="card error-card reject">
+      <h2>تعذّر إكمال الفحص</h2>
+      <p id="error-text" class="muted"></p>
+      <div><button class="btn" id="btn-error-back">رجوع</button></div>
+    </div>
+  </section>
+</main>
+
+<!-- Viewer -->
+<div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-label="عرض الصورة">
+  <div class="v-stage" id="v-stage">
+    <img id="v-img" alt="" draggable="false">
+    <span class="v-badge num" id="v-zoom">ملاءمة</span>
+    <span class="v-loading" id="v-loading" hidden>تحميل الدقة الكاملة…</span>
+    <button class="v-nav prev" id="v-prev" aria-label="السابقة" data-icon="chevron-right"></button>
+    <button class="v-nav next" id="v-next" aria-label="التالية" data-icon="chevron-left"></button>
+  </div>
+  <aside class="v-panel">
+    <div class="v-head">
+      <div><p class="name" id="v-name"></p><p class="facts num" id="v-facts"></p></div>
+      <button class="icon-btn" id="v-close" aria-label="إغلاق" data-icon="x"></button>
+    </div>
+    <div class="v-scroll">
+      <div class="v-section verdict-row">
+        <h4>الحكم</h4>
+        <div class="seg verdict-seg" id="v-seg">
+          <button data-v="pass" class="pass">مقبول</button>
+          <button data-v="review" class="review">مراجعة</button>
+          <button data-v="reject" class="reject">مرفوض</button>
+        </div>
+        <p class="verdict-note"><span id="v-auto"></span><button class="link" id="v-reset" hidden>إرجاع حكم الأداة</button></p>
+      </div>
+      <div class="v-section"><h4>ما وجدناه</h4><ul class="findings" id="v-findings"></ul></div>
+      <div class="v-section"><h4>القياسات</h4><div class="metrics" id="v-metrics"></div></div>
+      <div class="v-section"><h4>العنوان والكلمات المفتاحية</h4><div id="v-meta"></div></div>
+    </div>
+    <div class="v-foot">
+      <button class="btn ghost" id="v-reveal"><span data-icon="folder"></span>أظهره في المجلد</button>
+      <span class="kbd"><kbd>←</kbd> <kbd>→</kbd> تنقل · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> حكم · <kbd>Z</kbd> تكبير</span>
+    </div>
+  </aside>
+</div>
+
+<!-- Settings -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="الإعدادات">
+  <div class="drawer-head"><h2>الإعدادات</h2><button class="icon-btn" id="d-close" aria-label="إغلاق" data-icon="x"></button></div>
+  <section>
+    <h3>جهازك</h3>
+    <div class="hw-grid" id="hw-grid"></div>
+    <p class="muted" id="hw-note" style="font-size:.84rem"></p>
+  </section>
+  <section>
+    <h3>مراجعة Claude البصرية</h3>
+    <label class="row">مفتاح Claude API<input class="field" type="password" id="s-key" dir="ltr" autocomplete="off" placeholder="sk-ant-…"></label>
+    <label class="check"><input type="checkbox" id="s-remember">تذكّر المفتاح على هذا الجهاز</label>
+    <label class="row">النموذج<select class="select" id="s-model"></select></label>
+    <p class="muted" id="s-cost" style="font-size:.84rem"></p>
+    <div><button class="btn" id="s-save">حفظ</button></div>
+  </section>
+  <section>
+    <h3>الحدود</h3>
+    <div id="s-thresholds" style="display:grid;gap:16px"></div>
+    <div><button class="link" id="s-defaults">استعادة القيم الافتراضية</button></div>
+  </section>
+</aside>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

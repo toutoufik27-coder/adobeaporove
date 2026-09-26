@@ -84,18 +84,26 @@ class FileReport:
     width: int = 0
     height: int = 0
     findings: list[Finding] = field(default_factory=list)
-    metrics: dict[str, float] = field(default_factory=dict)
+    metrics: dict[str, float | str] = field(default_factory=dict)
     metadata: Metadata = field(default_factory=Metadata)
     phash: int | None = None
     phash_mirror: int | None = None
     thumbnail: bytes = b""
     sha256: str = ""
     vision_checked: bool = False
+    local_checked: bool = False
+    id: int = 0
+    # A verdict set by hand in the app; None keeps the computed one.
+    override: Verdict | None = None
+
+    @property
+    def computed_verdict(self) -> Verdict:
+        worst = max((f.level for f in self.findings), default=Level.INFO)
+        return Verdict(int(worst)) if worst > Level.INFO else Verdict.PASS
 
     @property
     def verdict(self) -> Verdict:
-        worst = max((f.level for f in self.findings), default=Level.INFO)
-        return Verdict(int(worst)) if worst > Level.INFO else Verdict.PASS
+        return self.override if self.override is not None else self.computed_verdict
 
     @property
     def is_raster(self) -> bool:
@@ -110,18 +118,25 @@ class FileReport:
 
     def to_dict(self) -> dict:
         return {
+            "id": self.id,
             "file": self.name,
             "path": self.path,
             "kind": self.kind,
             "verdict": self.verdict.folder,
+            "computed_verdict": self.computed_verdict.folder,
+            "overridden": self.override is not None,
             "width": self.width,
             "height": self.height,
             "size_bytes": self.size_bytes,
-            "metrics": {k: round(v, 3) for k, v in self.metrics.items()},
+            "megapixels": round(self.megapixels, 2),
+            "metrics": {k: (round(v, 3) if isinstance(v, float) else v) for k, v in self.metrics.items()},
             "vision_checked": self.vision_checked,
+            "local_checked": self.local_checked,
             "metadata": {
                 "title": self.metadata.title,
                 "keywords": self.metadata.keywords,
+                "category": self.metadata.category,
+                "releases": self.metadata.releases,
                 "source": self.metadata.source,
                 "ai_generated": self.metadata.ai_generated,
                 "ai_evidence": self.metadata.ai_evidence,

@@ -21,7 +21,8 @@ class Technical:
     # PNG: share of fully transparent pixels below which the "transparency" is suspicious.
     png_min_transparent: float = 0.02
     jpeg_quality_review: int = 75
-    jpeg_quality_reject: int = 50
+    # Estimated from the quantization tables; below this the blocks are visible at 100%.
+    jpeg_quality_reject: int = 40
 
 
 @dataclass
@@ -38,6 +39,13 @@ class Quality:
     # Share of pixels with no detail left, ignoring plain white/black studio backgrounds.
     highlight_clip_review: float = 0.20
     shadow_clip_review: float = 0.30
+    # Mean brightness (0-255) beyond which a photo is over- or underexposed.
+    bright_mean_review: float = 225.0
+    dark_mean_review: float = 35.0
+    # A border this bright/dark over this share of its length is a studio background, not clipping.
+    white_background_level: int = 245
+    black_background_level: int = 10
+    background_border_share: float = 0.6
     tile_size: int = 256
     max_tiles: int = 400
 
@@ -71,12 +79,35 @@ class Vision:
 
 
 @dataclass
+class LocalAI:
+    # Text and face detection on this computer (needs `pip install ".[gpu]"`); GPU when available.
+    enabled: bool = True
+    ocr: bool = True
+    faces: bool = True
+    gpu: bool = True
+    ocr_max_side: int = 2560
+    # Below this OCR confidence text is treated as unreadable (garbled when the image is AI-generated).
+    ocr_confidence: float = 0.4
+    face_score: float = 0.85
+    # A face whose short side is this share of the image's short side is treated as recognizable.
+    face_min_share: float = 0.025
+
+
+@dataclass
+class Performance:
+    # Files analysed at once; 0 sizes the pool from the CPU cores and memory of this computer.
+    jobs: int = 0
+
+
+@dataclass
 class Config:
     technical: Technical = field(default_factory=Technical)
     quality: Quality = field(default_factory=Quality)
     similarity: Similarity = field(default_factory=Similarity)
     metadata: Metadata = field(default_factory=Metadata)
     vision: Vision = field(default_factory=Vision)
+    local_ai: LocalAI = field(default_factory=LocalAI)
+    performance: Performance = field(default_factory=Performance)
     base_dir: Path = field(default_factory=Path.cwd)
 
 
@@ -103,8 +134,24 @@ def load_config(path: str | Path | None) -> Config:
             if key not in known:
                 raise ConfigError(f"مفتاح غير معروف في الإعدادات: {section_name}.{key}")
             current = getattr(section, key)
-            int_for_float = isinstance(current, float) and isinstance(value, int)
-            if isinstance(value, bool) or not (isinstance(value, type(current)) or int_for_float):
+            int_for_float = isinstance(current, float) and isinstance(value, int) and not isinstance(value, bool)
+            if isinstance(value, bool) != isinstance(current, bool) or not (
+                isinstance(value, type(current)) or int_for_float
+            ):
                 raise ConfigError(f"قيمة غير صالحة لـ {section_name}.{key}: {value!r}")
             setattr(section, key, type(current)(value))
+    resolve_blocklist(config)
     return config
+
+
+def resolve_blocklist(config: Config) -> Path | None:
+    """The extra blocklist as an absolute path; a missing file is a configuration error."""
+    name = config.metadata.extra_blocklist
+    if not name:
+        return None
+    path = Path(name).expanduser()
+    if not path.is_absolute():
+        path = config.base_dir / path
+    if not path.is_file():
+        raise ConfigError(f"ملف الكلمات الممنوعة غير موجود: {path}")
+    return path

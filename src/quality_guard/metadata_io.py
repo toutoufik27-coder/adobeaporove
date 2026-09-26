@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -204,19 +205,40 @@ def read_embedded(path: Path, img: Image.Image | None, head: bytes) -> Metadata:
     return meta
 
 
-def read_adobe_csv(path: Path) -> dict[str, dict[str, str]]:
-    """Rows of an Adobe Stock metadata CSV keyed by lower-case file name."""
+def _decode_csv(path: Path) -> str:
+    """Adobe wants UTF-8, but Excel on an Arabic Windows saves CSV as cp1256."""
+    data = path.read_bytes()
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1256", errors="replace")
+
+
+def read_adobe_csv(path: Path) -> tuple[dict[str, dict[str, str]], list[str]]:
+    """Rows of an Adobe Stock metadata CSV keyed by lower-case file name, plus warnings about the file."""
+    reader = csv.reader(io.StringIO(_decode_csv(path), newline=""))
+    columns = [h.strip().lower() for h in next(reader, [])]
+    if "filename" not in columns:
+        raise CsvFormatError(f"{path.name}: لا يوجد عمود Filename، الصيغة المتوقعة: {', '.join(CSV_COLUMNS)}")
     rows: dict[str, dict[str, str]] = {}
-    with open(path, newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        if not reader.fieldnames or "filename" not in {h.strip().lower() for h in reader.fieldnames}:
-            raise CsvFormatError(f"{path.name}: لا يوجد عمود Filename، الصيغة المتوقعة: {', '.join(CSV_COLUMNS)}")
-        for row in reader:
-            clean = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
-            name = clean.get("filename", "")
-            if name:
-                rows[Path(name).name.lower()] = clean
-    return rows
+    warnings: list[str] = []
+    k = columns.index("keywords") if "keywords" in columns else -1
+    for line, fields in enumerate(reader, start=2):
+        if not any(f.strip() for f in fields):
+            continue
+        if len(fields) > len(columns) and k >= 0:
+            # Unquoted keywords spill into the next columns; the columns after Keywords are still the last ones.
+            tail = len(columns) - k - 1
+            fields = fields[:k] + [", ".join(fields[k : len(fields) - tail])] + fields[len(fields) - tail :]
+            warnings.append(f"السطر {line}: الكلمات المفتاحية بلا علامتي تنصيص، فجُمعت تلقائياً؛ تأكد منها")
+        clean = {c: (fields[i].strip() if i < len(fields) else "") for i, c in enumerate(columns)}
+        name = clean.get("filename", "")
+        if name:
+            key = Path(name.replace("\\", "/")).name.lower()
+            if key in rows:
+                warnings.append(f"السطر {line}: الملف {name} مكرر في CSV، واعتُمد آخر سطر")
+            rows[key] = clean
+    return rows, warnings
 
 
 def find_adobe_csv(folder: Path) -> Path | None:
@@ -224,9 +246,8 @@ def find_adobe_csv(folder: Path) -> Path | None:
     found = []
     for candidate in sorted(folder.glob("*.csv")):
         try:
-            with open(candidate, newline="", encoding="utf-8-sig") as f:
-                header = next(csv.reader(f), [])
-        except (OSError, UnicodeDecodeError):
+            header = next(csv.reader(io.StringIO(_decode_csv(candidate), newline="")), [])
+        except OSError:
             continue
         if "filename" in {h.strip().lower() for h in header}:
             found.append(candidate)

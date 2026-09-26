@@ -10,6 +10,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 import threading
 from pathlib import Path
 
@@ -189,6 +190,7 @@ class VisionReviewer:
             except (OSError, ValueError):
                 self.cache = {}
         self.lock = threading.Lock()
+        self._dirty = 0
         self.input_tokens = 0
         self.output_tokens = 0
         self.calls = 0
@@ -196,9 +198,16 @@ class VisionReviewer:
     def _key(self, report: FileReport) -> str:
         return f"{report.sha256}:{self.config.model}:{PROMPT_VERSION}:{','.join(report.metadata.keywords)}"
 
-    def _save_cache(self) -> None:
-        if self.cache_path:
-            self.cache_path.write_text(json.dumps(self.cache, ensure_ascii=False), encoding="utf-8")
+    def save_cache(self) -> None:
+        """Write the cache atomically, so an interrupted run never loses what was already paid for."""
+        if not self.cache_path or not self._dirty:
+            return
+        with self.lock:
+            data = json.dumps(self.cache, ensure_ascii=False)
+            self._dirty = 0
+        tmp = self.cache_path.with_suffix(".tmp")
+        tmp.write_text(data, encoding="utf-8")
+        os.replace(tmp, self.cache_path)
 
     def _request(self, overview: str, crop: str, report: FileReport):
         meta = report.metadata
@@ -272,7 +281,10 @@ class VisionReviewer:
                 return {"error": "رد Claude ليس JSON صالحاً"}
         with self.lock:
             self.cache[key] = result
-            self._save_cache()
+            self._dirty += 1
+            flush = self._dirty >= 20
+        if flush:
+            self.save_cache()
         return result
 
 
@@ -298,7 +310,7 @@ def apply_review(report: FileReport, result: dict) -> None:
 
     ai = meta.ai_generated
     if result.get("people") == "recognizable" and not meta.releases and not ai and not any(
-        f.rule == "vision.recognizable_person" for f in report.findings
+        f.rule in ("vision.recognizable_person", "local.faces") for f in report.findings
     ):
         report.add("vision.people_release", "people", Level.REVIEW,
                    "يظهر شخص يمكن التعرف عليه؛ أرفق تصريح النموذج (Model Release)")

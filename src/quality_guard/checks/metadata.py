@@ -13,6 +13,7 @@ from ..findings import FileReport, Level
 
 SECTION_LABELS = {
     "brand": "علامة تجارية",
+    "brand_check": "كلمة قد تكون علامة تجارية",
     "sports_org": "علامة رياضية محمية",
     "character": "شخصية محمية",
     "artist": "اسم فنان",
@@ -22,10 +23,10 @@ SECTION_LABELS = {
     "custom": "كلمة من قائمتك",
 }
 SECTION_GROUPS = {
-    "brand": "ip", "sports_org": "ip", "character": "ip", "landmark": "ip", "landmark_check": "ip",
+    "brand": "ip", "brand_check": "ip", "sports_org": "ip", "character": "ip", "landmark": "ip", "landmark_check": "ip",
     "artist": "ip", "person": "people", "custom": "metadata",
 }
-REVIEW_SECTIONS = {"landmark_check"}
+REVIEW_SECTIONS = {"brand_check", "landmark_check"}
 
 NEWS_WORDS = ("news", "breaking news", "editorial", "photojournalism", "war in", "invasion of")
 
@@ -137,7 +138,8 @@ def check_metadata(report: FileReport, config: Config, blocklist: Blocklist) -> 
         report.add(f"meta.blocked.{section}", SECTION_GROUPS.get(section, "metadata"), level,
                    f"{SECTION_LABELS.get(section, 'كلمة ممنوعة')} في العنوان أو الكلمات المفتاحية", phrase)
 
-    if EMAIL.search(text) or URL.search(text) or PHONE.search(text):
+    # Field by field: neighbouring keywords like "2023", "2024", "2025" must not read as a phone number.
+    if any(EMAIL.search(field) or URL.search(field) or PHONE.search(field) for field in [title, *keywords]):
         report.add("meta.personal_info", "metadata", Level.REVIEW,
                    "العنوان أو الكلمات تحتوي على بريد أو رابط أو رقم هاتف")
 

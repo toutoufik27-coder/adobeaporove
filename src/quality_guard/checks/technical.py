@@ -33,8 +33,7 @@ def sniff(head: bytes) -> str:
         return "pdf"
     if head.startswith(b"%!PS-Adobe") or head.startswith(b"\xc5\xd0\xd3\xc6"):
         return "postscript"
-    text = head[:4096].lower()
-    if b"<svg" in text:
+    if b"<svg" in head.lower():  # XML declarations, comments and DOCTYPEs may come first
         return "svg"
     if head[4:12] in (b"ftypheic", b"ftypheix", b"ftypmif1", b"ftypavif"):
         return "heif"
@@ -91,16 +90,22 @@ def check_color(report: FileReport, img: Image.Image) -> None:
     icc_bytes = img.info.get("icc_profile")
     info = parse_icc(icc_bytes) if icc_bytes else None
     if info is not None:
+        report.metrics["icc"] = info.label
         if info.color_space == "CMYK":
-            report.add("tech.cmyk", "technical", Level.REJECT, "ملف تعريف الألوان CMYK، والمطلوب sRGB", info.description)
-        elif info.color_space == "GRAY" or mode in ("L", "LA", "I;16"):
+            report.add("tech.cmyk", "technical", Level.REJECT, "ملف تعريف الألوان CMYK، والمطلوب sRGB", info.label)
+        elif info.color_space == "GRAY" or mode in ("L", "LA", "I", "I;16", "I;16B"):
             report.add("tech.grayscale", "technical", Level.REVIEW,
-                       "صورة رمادية (Grayscale)؛ احفظها بنظام RGB وملف sRGB لتجنب الرفض", info.description)
-        elif not info.is_srgb:
+                       "صورة رمادية (Grayscale)؛ احفظها بنظام RGB وملف sRGB لتجنب الرفض", info.label)
+        elif info.is_srgb:
+            return
+        elif info.family:
             report.add("tech.color_space", "technical", Level.REJECT,
                        "فضاء الألوان ليس sRGB؛ حوّل الصورة إلى sRGB قبل التصدير", info.family)
+        else:
+            report.add("tech.color_space_unknown", "technical", Level.REVIEW,
+                       "ملف ألوان غير معروف؛ تأكد أنه sRGB أو صدّر الصورة بملف sRGB", info.label)
         return
-    if mode in ("L", "LA", "I;16", "1"):
+    if mode in ("L", "LA", "I", "I;16", "I;16B", "1"):
         report.add("tech.grayscale", "technical", Level.REVIEW,
                    "صورة رمادية (Grayscale)؛ احفظها بنظام RGB وملف sRGB لتجنب الرفض")
         return
@@ -138,6 +143,18 @@ def check_jpeg_quality(report: FileReport, img: Image.Image, config: Config) -> 
     elif quality < tech.jpeg_quality_review:
         report.add("tech.jpeg_quality", "quality", Level.REVIEW,
                    "ضغط JPEG مرتفع وقد تظهر آثاره بتكبير 100%", f"جودة تقديرية {quality} من 100")
+
+
+def to_rgb(img: Image.Image) -> Image.Image:
+    """8-bit RGB. Pillow clips 16-bit grayscale instead of scaling it, so scale it first."""
+    if img.mode in ("I", "I;16", "I;16B", "I;16L"):
+        a = np.asarray(img, dtype=np.float64)
+        top = 65535.0 if a.max() > 255 else 255.0
+        return Image.fromarray(np.clip(a / top * 255 + 0.5, 0, 255).astype(np.uint8), "L").convert("RGB")
+    if img.mode == "F":
+        a = np.asarray(img, dtype=np.float64)
+        return Image.fromarray(np.clip(a * (255 if a.max() <= 1 else 1), 0, 255).astype(np.uint8), "L").convert("RGB")
+    return img.convert("RGB")
 
 
 def alpha_channel(img: Image.Image) -> np.ndarray | None:
@@ -182,10 +199,11 @@ def check_png(report: FileReport, img: Image.Image, rgb: np.ndarray, config: Con
     elif max(top, bottom, left, right) > tech.png_margin_review:
         report.add("tech.png_margins", "technical", Level.REVIEW,
                    "مساحة فارغة كبيرة حول العنصر؛ قص الصورة بإحكام حوله", margins)
-    # A checkerboard can also be painted inside a PNG that has some real transparency.
+    # A checkerboard can also be painted inside a PNG that has some real transparency. The pattern
+    # could be a real tiled surface, so this one only asks for a look.
     if detect_checkerboard(np.where(alpha[..., None] == 255, rgb, 0)):
-        report.add("tech.fake_transparency", "technical", Level.REJECT,
-                   "أجزاء من الخلفية شطرنجية مرسومة وليست شفافة")
+        report.add("tech.fake_transparency", "technical", Level.REVIEW,
+                   "أجزاء من الخلفية تبدو شطرنجية مرسومة وليست شفافة")
 
 
 def detect_checkerboard(rgb: np.ndarray, patch: int = 96) -> bool:

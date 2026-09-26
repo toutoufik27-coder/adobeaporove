@@ -31,7 +31,7 @@ def test_scan_sorts_files_and_writes_reports(tmp_path, photo):
     batch = tmp_path / "batch"
     make_batch(batch, photo)
     out = tmp_path / "out"
-    assert main([str(batch), "--out", str(out), "--jobs", "1"]) == 0
+    assert main([str(batch), "--out", str(out), "--jobs", "1", "--no-local-ai"]) == 0
 
     assert sorted(p.name for p in (out / "pass").glob("*.jpg")) == ["good.jpg"]
     assert sorted(p.name for p in (out / "reject").iterdir() if p.suffix != ".csv") == [
@@ -45,7 +45,8 @@ def test_scan_sorts_files_and_writes_reports(tmp_path, photo):
     assert {x["rule"] for x in obj["findings"]} >= {"meta.blocked.brand"}
 
     html = (out / "report.html").read_text(encoding="utf-8")
-    assert 'dir="rtl"' in html and "good.jpg" in html and "الفحص البصري غير مفعّل" in html
+    assert 'dir="rtl"' in html and "good.jpg" in html and "لم تعمل مراجعة Claude البصرية" in html
+    assert (out / "thumbs").is_dir() and (out / "assets" / "fonts.css").is_file()
     rows = list(csv.DictReader((out / "results.csv").open(encoding="utf-8-sig")))
     assert {r["file"] for r in rows} == set(verdicts)
     # The metadata CSV is split per pile, ready for Adobe's upload page.
@@ -58,9 +59,9 @@ def test_rerun_removes_stale_copies(tmp_path, photo):
     batch = tmp_path / "batch"
     make_batch(batch, photo)
     out = tmp_path / "out"
-    main([str(batch), "--out", str(out), "--jobs", "1"])
+    main([str(batch), "--out", str(out), "--jobs", "1", "--no-local-ai"])
     photo.save(batch / "blurry.jpg", quality=95)  # fixed by the user
-    main([str(batch), "--out", str(out), "--jobs", "1"])
+    main([str(batch), "--out", str(out), "--jobs", "1", "--no-local-ai"])
     assert (out / "pass" / "blurry.jpg").exists()
     assert not (out / "reject" / "blurry.jpg").exists()
 
@@ -68,8 +69,8 @@ def test_rerun_removes_stale_copies(tmp_path, photo):
 def test_parallel_scan_matches_serial(tmp_path, photo):
     batch = tmp_path / "batch"
     make_batch(batch, photo)
-    main([str(batch), "--out", str(tmp_path / "a"), "--jobs", "1", "--no-copy"])
-    main([str(batch), "--out", str(tmp_path / "b"), "--jobs", "3", "--no-copy"])
+    main([str(batch), "--out", str(tmp_path / "a"), "--jobs", "1", "--no-copy", "--no-local-ai"])
+    main([str(batch), "--out", str(tmp_path / "b"), "--jobs", "3", "--no-copy", "--no-local-ai"])
     a = json.loads((tmp_path / "a" / "results.json").read_text(encoding="utf-8"))
     b = json.loads((tmp_path / "b" / "results.json").read_text(encoding="utf-8"))
     assert [f["verdict"] for f in a["files"]] == [f["verdict"] for f in b["files"]]

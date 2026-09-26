@@ -1,9 +1,8 @@
-"""Command line: `qguard FOLDER`, `qguard calibrate`, or no arguments for a folder picker."""
+"""Command line: `qguard FOLDER`, `qguard calibrate`, and `qguard ui` (also what runs with no arguments)."""
 
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import webbrowser
 from collections import Counter
@@ -12,16 +11,18 @@ from pathlib import Path
 from . import __version__
 from .config import Config, ConfigError, load_config
 from .findings import Level, Verdict
-from .metadata_io import CsvFormatError, find_adobe_csv
-from .report import write_csv, write_html, write_json
-from .scanner import ScanResult, scan
-from .sorter import sort_files
+from .metadata_io import CsvFormatError
+from .pipeline import analyse, default_out_dir, publish
+from .scanner import Cancelled, ProgressEvent, ScanResult
 
 EPILOG = """أمثلة:
+  qguard                                     # يفتح التطبيق في المتصفح
   qguard "D:\\Stock\\batch-12"
   qguard "D:\\Stock\\batch-12" --vision --open
   qguard calibrate --accepted "D:\\Stock\\accepted" --rejected "D:\\Stock\\rejected"
 """
+
+STAGES = {"analyze": "فحص", "similar": "تشابه", "local": "فحص محلي", "vision": "فحص بصري", "done": "انتهى"}
 
 
 def _console_utf8() -> None:
@@ -32,10 +33,11 @@ def _console_utf8() -> None:
             pass
 
 
-def _progress(stage: str, done: int, total: int, name: str) -> None:
-    label = "فحص" if stage == "analyze" else "فحص بصري"
-    sys.stderr.write(f"\r{label}: {done}/{total}  {name[:50]:<50}")
-    if done == total:
+def _progress(event: ProgressEvent) -> None:
+    if event.stage in ("similar", "done"):
+        return
+    sys.stderr.write(f"\r{STAGES[event.stage]}: {event.done}/{event.total}  {event.name[:50]:<50}")
+    if event.done == event.total:
         sys.stderr.write("\n")
     sys.stderr.flush()
 
@@ -43,9 +45,11 @@ def _progress(stage: str, done: int, total: int, name: str) -> None:
 def _common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--vision", action="store_true", help="فحص بصري بواسطة Claude (يحتاج ANTHROPIC_API_KEY، وله تكلفة)")
     p.add_argument("--model", help="نموذج Claude للفحص البصري (الافتراضي claude-opus-5)")
+    p.add_argument("--local-ai", action=argparse.BooleanOptionalAction, default=None,
+                   help="قراءة النصوص وكشف الوجوه على جهازك (يعمل تلقائياً إن كان مثبتاً)")
     p.add_argument("--config", help="ملف إعدادات TOML لتغيير الحدود")
     p.add_argument("--recursive", action="store_true", help="افحص المجلدات الفرعية أيضاً")
-    p.add_argument("--jobs", type=int, default=0, help="عدد الصور التي تُفحص في وقت واحد")
+    p.add_argument("--jobs", type=int, default=0, help="عدد الصور التي تُفحص في وقت واحد (الافتراضي حسب جهازك)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -69,35 +73,19 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--rejected", required=True, help="مجلد صور رفضها Adobe")
     c.add_argument("--out", help="مجلد النتائج")
     _common(c)
+
+    u = sub.add_parser("ui", help="افتح التطبيق في المتصفح")
+    u.add_argument("--port", type=int, default=0, help="المنفذ (الافتراضي: أي منفذ متاح)")
+    u.add_argument("--no-browser", action="store_true", help="لا تفتح المتصفح تلقائياً")
+    u.add_argument("--config", help="ملف إعدادات TOML")
     return parser
 
 
 def _config(args: argparse.Namespace) -> Config:
     config = load_config(args.config)
-    if args.model:
+    if getattr(args, "model", None):
         config.vision.model = args.model
     return config
-
-
-def run_scan(
-    input_dir: Path, out_dir: Path, config: Config, *, csv: Path | None = None, vision: bool = False,
-    recursive: bool = False, jobs: int = 0, copy: bool = True, quiet: bool = False,
-) -> ScanResult:
-    if csv is None:
-        csv = find_adobe_csv(input_dir)
-        if csv and not quiet:
-            print(f"ملف البيانات الوصفية: {csv.name}")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    result = scan(
-        input_dir, config, recursive=recursive, csv_path=csv, vision=vision, jobs=jobs,
-        exclude=out_dir, cache_dir=out_dir, progress=None if quiet else _progress,
-    )
-    if copy:
-        sort_files(result, out_dir)
-    write_html(result, config, out_dir / "report.html")
-    write_csv(result, out_dir / "results.csv")
-    write_json(result, out_dir / "results.json")
-    return result
 
 
 def _summary(result: ScanResult) -> str:
@@ -112,26 +100,32 @@ def cmd_scan(args: argparse.Namespace) -> int:
     if not input_dir.is_dir():
         print(f"المجلد غير موجود: {input_dir}", file=sys.stderr)
         return 2
-    out_dir = Path(args.out).expanduser().resolve() if args.out else input_dir.parent / f"{input_dir.name}-quality-guard"
+    out_dir = Path(args.out).expanduser().resolve() if args.out else default_out_dir(input_dir)
     csv = Path(args.csv).expanduser().resolve() if args.csv else None
-    result = run_scan(input_dir, out_dir, _config(args), csv=csv, vision=args.vision,
-                      recursive=args.recursive, jobs=args.jobs, copy=not args.no_copy)
+    config = _config(args)
+    result = analyse(input_dir, out_dir, config, csv=csv, vision=args.vision, local_ai=args.local_ai,
+                     recursive=args.recursive, jobs=args.jobs, progress=_progress)
     if not result.reports:
         print("لا توجد صور في هذا المجلد.")
         return 1
+    report = publish(result, config, out_dir, copy=not args.no_copy)
+    if result.csv_path:
+        print(f"ملف البيانات الوصفية: {result.csv_path.name}")
+    for warning in result.csv_warnings:
+        print(f"تنبيه CSV: {warning}", file=sys.stderr)
     print(_summary(result))
     if args.vision and result.vision != "on":
         print(f"تنبيه: الفحص البصري لم يعمل: {result.vision}", file=sys.stderr)
-    print(f"التقرير: {out_dir / 'report.html'}")
+    print(f"التقرير: {report}")
     if args.open:
-        webbrowser.open((out_dir / "report.html").as_uri())
+        webbrowser.open(report.as_uri())
     return 0
 
 
 def calibration_text(accepted: ScanResult, rejected: ScanResult) -> str:
     def shares(r: ScanResult) -> tuple[float, float, float]:
         n = max(1, len(r.reports))
-        return tuple(r.count(v) / n for v in (Verdict.PASS, Verdict.REVIEW, Verdict.REJECT))  # type: ignore[return-value]
+        return (r.count(Verdict.PASS) / n, r.count(Verdict.REVIEW) / n, r.count(Verdict.REJECT) / n)
 
     a, r = shares(accepted), shares(rejected)
     na, nr = len(accepted.reports), len(rejected.reports)
@@ -149,8 +143,8 @@ def calibration_text(accepted: ScanResult, rejected: ScanResult) -> str:
         )
     false_alarms: Counter[str] = Counter()
     for rep in accepted.reports:
-        for f in {(f.rule, f.message) for f in rep.findings if f.level == Level.REJECT}:
-            false_alarms[f[1]] += 1
+        for _, message in {(f.rule, f.message) for f in rep.findings if f.level == Level.REJECT}:
+            false_alarms[message] += 1
     if false_alarms:
         lines.append("أكثر أسباب الرفض الخاطئ على الصور المقبولة (فكّر في تعديل حدودها في ملف الإعدادات):")
         lines += [f"  {n} × {msg}" for msg, n in false_alarms.most_common(5)]
@@ -171,8 +165,10 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     config = _config(args)
     results = []
     for name, folder in (("accepted", acc), ("rejected", rej)):
-        results.append(run_scan(folder, out / name, config, vision=args.vision, recursive=args.recursive,
-                                jobs=args.jobs, copy=False))
+        result = analyse(folder, out / name, config, vision=args.vision, local_ai=args.local_ai,
+                         recursive=args.recursive, jobs=args.jobs, progress=_progress)
+        publish(result, config, out / name, copy=False)
+        results.append(result)
     text = calibration_text(*results)
     (out / "calibration.txt").write_text(text + "\n", encoding="utf-8")
     print(text)
@@ -180,45 +176,26 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
-def gui() -> int:
-    """Double-click mode: pick a folder, scan it, open the report."""
-    try:
-        import tkinter as tk
-        from tkinter import filedialog, messagebox
-    except ImportError:
-        build_parser().print_help()
-        return 2
-    root = tk.Tk()
-    root.withdraw()
-    folder = filedialog.askdirectory(title="اختر مجلد الصور المراد فحصها")
-    if not folder:
-        return 0
-    vision = bool(os.environ.get("ANTHROPIC_API_KEY")) and messagebox.askyesno(
-        "Quality Guard", "هل تريد الفحص البصري بواسطة Claude؟\nيكتشف الشعارات والأشخاص وعيوب الذكاء الاصطناعي، وله تكلفة لكل صورة."
-    )
-    input_dir = Path(folder)
-    out_dir = input_dir.parent / f"{input_dir.name}-quality-guard"
-    print(f"أفحص: {input_dir}")
-    result = run_scan(input_dir, out_dir, Config(), vision=vision)
-    webbrowser.open((out_dir / "report.html").as_uri())
-    messagebox.showinfo("Quality Guard", f"{_summary(result)}\n\nالنتائج في:\n{out_dir}")
-    root.destroy()
-    return 0
+def cmd_ui(args: argparse.Namespace) -> int:
+    from .server import serve  # noqa: PLC0415 - only the app needs the web server
+
+    return serve(_config(args), port=args.port, open_browser=not args.no_browser, config_from_file=bool(args.config))
 
 
 def main(argv: list[str] | None = None) -> int:
     _console_utf8()
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
-        return gui()
-    if argv[0] not in ("scan", "calibrate") and not argv[0].startswith("-"):
+        argv = ["ui"]
+    elif argv[0] not in ("scan", "calibrate", "ui") and not argv[0].startswith("-"):
         argv.insert(0, "scan")
     args = build_parser().parse_args(argv)
+    commands = {"scan": cmd_scan, "calibrate": cmd_calibrate, "ui": cmd_ui}
     try:
-        return cmd_scan(args) if args.command == "scan" else cmd_calibrate(args)
+        return commands[args.command](args)
     except (ConfigError, CsvFormatError) as e:
         print(e, file=sys.stderr)
         return 2
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, Cancelled):
         print("\nأُوقف الفحص.", file=sys.stderr)
         return 130

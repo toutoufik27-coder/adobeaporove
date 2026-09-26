@@ -114,6 +114,29 @@ def test_reads_adobe_csv(tmp_path):
     (tmp_path / "notes.csv").write_text("a,b\n1,2\n", encoding="utf-8")
     csv_path = find_adobe_csv(tmp_path)
     assert csv_path is not None and csv_path.name == "meta.csv"
-    rows = read_adobe_csv(csv_path)
+    rows, warnings = read_adobe_csv(csv_path)
     assert rows["img_1.jpg"]["title"] == "Lemons"
     assert rows["img_1.jpg"]["keywords"] == "lemon, fruit"
+    assert warnings == []
+
+
+def test_csv_with_unquoted_keywords_and_arabic_excel_encoding(tmp_path):
+    (tmp_path / "meta.csv").write_bytes(
+        "Filename,Title,Keywords,Category,Releases\na.jpg,غروب,sea,sky,sun,7,\n".encode("cp1256")
+    )
+    rows, warnings = read_adobe_csv(tmp_path / "meta.csv")
+    assert rows["a.jpg"]["title"] == "غروب"
+    assert rows["a.jpg"]["keywords"] == "sea, sky, sun"
+    assert rows["a.jpg"]["category"] == "7"
+    assert len(warnings) == 1
+
+
+def test_ordinary_words_are_not_trademarks():
+    r = rules(report_with("Über den Wolken", ["clouds", "sky", "canon in d", "music", "sheet"]))
+    assert r == {"meta.blocked.brand_check": Level.REVIEW, "meta.mixed_language": r.get("meta.mixed_language")} or \
+        r == {"meta.blocked.brand_check": Level.REVIEW}
+    assert Level.REJECT not in r.values()
+
+
+def test_years_as_keywords_are_not_a_phone_number():
+    assert "meta.personal_info" not in rules(report_with("Calendar", ["2023", "2024", "2025", "calendar", "date"]))

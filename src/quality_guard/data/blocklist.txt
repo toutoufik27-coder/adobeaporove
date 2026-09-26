@@ -1,5 +1,5 @@
 # Words Adobe Stock rejects in titles, keywords and AI prompts. A match rejects the file, except
-# in [landmark_check], which only sends it to review.
+# in [brand_check] and [landmark_check], which only send it to review.
 # Format: one entry per line under a [section]. Matching ignores case, accents, hyphens and apostrophes,
 # and only matches whole words. Words that are also ordinary nouns (apple, galaxy, jaguar, amazon,
 # windows, dove, shell, puma, corona, mustang...) are deliberately left out to avoid false alarms.
@@ -21,7 +21,6 @@ xbox
 playstation
 nintendo
 sony
-canon
 nikon
 fujifilm
 leica
@@ -34,11 +33,9 @@ lamborghini
 maserati
 bugatti
 bmw
-mercedes
 mercedes-benz
 audi
 volkswagen
-tesla
 toyota
 honda
 nissan
@@ -87,7 +84,6 @@ ray-ban
 levis
 ikea
 lego
-barbie
 hot wheels
 playmobil
 facebook
@@ -95,13 +91,11 @@ instagram
 whatsapp
 tiktok
 youtube
-twitter
 snapchat
 linkedin
 netflix
 spotify
 amazon prime
-uber
 airbnb
 visa card
 mastercard
@@ -122,7 +116,6 @@ olympics
 olympic games
 formula 1
 formula one
-world cup
 super bowl
 wimbledon
 
@@ -277,6 +270,17 @@ chillon castle
 eltz castle
 buckingham palace
 windsor castle
+
+# Brand names that are also ordinary words (a musical canon, the German "über", a name, a unit):
+# a match only asks for a review.
+[brand_check]
+canon
+mercedes
+tesla
+barbie
+twitter
+uber
+world cup
 
 # Often restricted; check Adobe's list before submitting.
 [landmark_check]

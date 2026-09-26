@@ -85,9 +85,9 @@ def check_quality(report: FileReport, gray: np.ndarray, config: Config, alpha: n
         coarse is not None and coarse < q.coarse_sharpness_review)
     parts = []
     if fine is not None:
-        parts.append(f"الحدة الدقيقة {fine:.2f} (الحادة 0.70 فأكثر)")
+        parts.append(f"الحدة الدقيقة {fine:.2f} (الحد {q.sharpness_review:g})")
     if coarse is not None:
-        parts.append(f"الحدة العامة {coarse:.2f} (الحادة 0.60 فأكثر)")
+        parts.append(f"الحدة العامة {coarse:.2f} (الحد {q.coarse_sharpness_review:g})")
     detail = "، ".join(parts)
     # Heavy noise makes the sharpness estimate unreliable, so it never rejects on its own then.
     noisy = noise is not None and noise >= q.noise_review
@@ -114,8 +114,8 @@ def check_exposure(report: FileReport, rgb_small: np.ndarray, config: Config) ->
     h, w = y.shape
     ring = max(2, round(min(h, w) * 0.02))
     border = np.concatenate([y[:ring].ravel(), y[-ring:].ravel(), y[:, :ring].ravel(), y[:, -ring:].ravel()])
-    white_bg = (border >= 245).mean() > 0.6
-    black_bg = (border <= 10).mean() > 0.6
+    white_bg = (border >= q.white_background_level).mean() > q.background_border_share
+    black_bg = (border <= q.black_background_level).mean() > q.background_border_share
     highlights = float((y >= 253).mean())
     shadows = float((y <= 2).mean())
     mean = float(y.mean())
@@ -125,13 +125,13 @@ def check_exposure(report: FileReport, rgb_small: np.ndarray, config: Config) ->
         if highlights > q.highlight_clip_review:
             report.add("quality.highlights", "quality", Level.REVIEW,
                        "مناطق بيضاء محترقة بلا تفاصيل (إضاءة زائدة)", f"{highlights:.0%} من الصورة")
-        elif mean > 225:
+        elif mean > q.bright_mean_review:
             report.add("quality.bright", "quality", Level.REVIEW, "الصورة ساطعة جداً (تعريض زائد)", f"متوسط السطوع {mean:.0f}/255")
     if not black_bg:
         if shadows > q.shadow_clip_review:
             report.add("quality.shadows", "quality", Level.REVIEW,
                        "مناطق سوداء بلا تفاصيل (ظلام يُفقد التفاصيل)", f"{shadows:.0%} من الصورة")
-        elif mean < 35:
+        elif mean < q.dark_mean_review:
             report.add("quality.dark", "quality", Level.REVIEW, "الصورة مظلمة جداً (تعريض ناقص)", f"متوسط السطوع {mean:.0f}/255")
 
 

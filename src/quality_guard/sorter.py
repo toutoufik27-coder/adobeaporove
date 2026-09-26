@@ -34,6 +34,7 @@ def sort_files(result: ScanResult, out_dir: Path) -> dict[str, list[str]]:
     _forget_previous_run(out_dir)
     copied: list[str] = []
     placed: dict[str, list[str]] = {v.folder: [] for v in Verdict}
+    csv_rows: dict[str, list[dict[str, str]]] = {v.folder: [] for v in Verdict}
     for report in result.reports:
         folder = out_dir / report.verdict.folder
         folder.mkdir(exist_ok=True)
@@ -45,18 +46,16 @@ def sort_files(result: ScanResult, out_dir: Path) -> dict[str, list[str]]:
         shutil.copy2(report.path, target)
         copied.append(str(target.relative_to(out_dir)))
         placed[report.verdict.folder].append(target.name)
+        row = result.csv_rows.get(report.name.lower())
+        if row is not None:
+            # The row names the copy as it was actually saved, "name (2).jpg" included.
+            csv_rows[report.verdict.folder].append({**row, "filename": target.name})
 
     # With a metadata CSV, each pile gets its own CSV ready for Adobe's upload page.
-    if result.csv_rows:
-        for verdict in Verdict:
-            rows = [
-                {**result.csv_rows[r.name.lower()], "filename": r.name}
-                for r in result.reports
-                if r.verdict == verdict and r.name.lower() in result.csv_rows
-            ]
-            if rows:
-                csv_path = out_dir / verdict.folder / "adobe-stock-metadata.csv"
-                write_adobe_csv(csv_path, rows)
-                copied.append(str(csv_path.relative_to(out_dir)))
+    for folder, rows in csv_rows.items():
+        if rows:
+            csv_path = out_dir / folder / "adobe-stock-metadata.csv"
+            write_adobe_csv(csv_path, rows)
+            copied.append(str(csv_path.relative_to(out_dir)))
     (out_dir / MANIFEST).write_text(json.dumps(copied, ensure_ascii=False, indent=0), encoding="utf-8")
     return placed

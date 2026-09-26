@@ -1,20 +1,24 @@
 // The ten processing passes. Each pass only proposes candidates; the engine core
-// validates them (geometry, topology, region render, confidence) and logs the decision.
+// validates them on measured evidence (geometry, topology, region render) and logs the decision.
 import { attempt, record, hiddenAt, visiblePixels, subpathVisibility, refreshOcclusion, subBox, unionBox, boxOf, regionCheck, globalCheck, nodesOf, snapshot, restore } from './engine.js';
 import { deepCopy } from './model.js';
 import { tanIn, tanOut, segLength, segStart, segEnd, sampleNative, nodeTypes, recognize, organicScore, symmetry, topology, polyOf, complexity } from './features.js';
 import { fitStretch } from './fit.js';
-import { dist, sub, add, mul, norm, cross, dot, len, turnDeg, lineDeviation, polyArea, bbox, pointGrid } from './geom.js';
+import { dist, sub, add, mul, norm, cross, dot, len, turnDeg, lineDeviation, polyArea, bbox, pointGrid, hausdorff } from './geom.js';
 import { roundSubpaths, parsePath, writePath } from './pathdata.js';
 import { mult, apply, isIdentity, isUniform, scaleOf, invert } from './matrix.js';
 import { getAttr, localName } from './xml.js';
 import { touchesUncertain } from './capability.js';
+import { certainlyHidden, tinyArtifacts, duplicates, joinBrokenStrokes, loopRepair, kinkRepair, primitiveEvidence } from './repairs.js';
+import { noteChange, dropChanges, REPAIR, OPTIMIZATION } from './changes.js';
+import { curveDistance } from './evidence.js';
 
 const lu = (ctx, e) => ctx.u / (e.scale || 1);                    // artwork unit in element-local units
 const editable = (ctx, e) => e.editable && !e.removed && e.subpaths.length;
 const strokeLocked = (ctx, e) => ctx.S.strokePreservation && e.stroke.kind !== 'none';
 const cloneSeg = (g) => ({ t: g.t, p: g.p.map((q) => q.slice()), ...(g.a ? { a: { ...g.a } } : {}) });
 const replaceSub = (subs, i, sp) => subs.map((s, k) => (k === i ? sp : s));
+const spBox = (sp) => { const f = polyOf(sp, 1e-3 * Math.max(1e-9, (() => { const b = bbox(sp.segs.flatMap((g) => g.p)); return Math.max(b[2] - b[0], b[3] - b[1]); })())); return bbox(f); };
 const spSize = (sp) => { const b = bbox(sp.segs.flatMap((g) => g.p)); return Math.max(b[2] - b[0], b[3] - b[1]); };
 const hiddenFn = (ctx, e) => (q) => hiddenAt(ctx, e, q);
 
@@ -32,7 +36,7 @@ export function passStructure(ctx) {
     if ((!e.subpaths.length || invisible) && !keepNode) {
       const op = !e.subpaths.length ? 'empty element' : 'invisible element';
       e.removed = true;
-      record(ctx, { pass: P, op, el: e.idx, accepted: true, confidence: 0.99, reason: op === 'empty element' ? 'no geometry' : 'no fill and no stroke (or opacity 0)', nodes: [nodesOf(e.subpaths), 0] });
+      record(ctx, { pass: P, op, el: e.idx, accepted: true, reason: op === 'empty element' ? 'no geometry' : 'no fill and no stroke (or opacity 0)', nodes: [nodesOf(e.subpaths), 0] });
       continue;
     }
     // degenerate contours: lone moveto, closed filled contour with no area and no stroke
@@ -42,41 +46,54 @@ export function passStructure(ctx) {
       if (e.stroke.kind === 'none' && Math.abs(polyArea(polyOf(sp, 0.1 * u))) < 1e-6 * u * u) return false;
       return true;
     });
-    if (keep.length < e.subpaths.length) attempt(ctx, P, 'degenerate contour', e, [{ subpaths: keep, confidence: 0.99, topologyChange: true, label: `${e.subpaths.length - keep.length} contour(s) without area` }]);
-    // topology repair: an open contour of a filled shape whose ends almost meet
-    if (S.topologyRepair && e.stroke.kind === 'none' && e.fill.kind !== 'none') {
+    if (keep.length < e.subpaths.length) attempt(ctx, P, 'degenerate contour', e, [{ subpaths: keep, topologyChange: true, label: `${e.subpaths.length - keep.length} contour(s) without area` }]);
+    // topology repair: an open contour whose ends almost meet (a tiny accidental gap).
+    // Filled: the fill already closes it, Z makes it explicit. Stroked: the gap must also
+    // be tiny against the stroke width, and the render decides (caps become a join).
+    const stroked = e.stroke.kind !== 'none' && e.strokeWidth > 0;
+    if (S.topologyRepair && (e.fill.kind !== 'none' || stroked) && !(stroked && strokeLocked(ctx, e))) {
+      const gapMax = stroked ? Math.min(0.5 * u, 0.25 * e.strokeWidth) : 0.5 * u;
       e.subpaths.forEach((sp, i) => {
+        sp = e.subpaths[i];
         if (sp.closed || sp.segs.length < 2) return;
         const a = segStart(sp.segs[0]), z = segEnd(sp.segs[sp.segs.length - 1]);
-        if (dist(a, z) > 0.5 * u) return;
+        if (dist(a, z) > gapMax) return;
         const segs = sp.segs.map(cloneSeg);
         if (dist(a, z) > 0) segs.push({ t: 'L', p: [z, a], implicit: true });
-        attempt(ctx, P, 'close open contour', e, [{ subpaths: replaceSub(e.subpaths, i, { ...sp, segs, closed: true }), confidence: 0.96, topologyChange: true, label: 'fill already closes it: explicit Z' }], { sub: i });
+        attempt(ctx, P, 'close open contour', e, [{ subpaths: replaceSub(e.subpaths, i, { ...sp, segs, closed: true }), topologyChange: true, allowMore: true, label: `ends ${(dist(a, z) / u).toFixed(2)} u apart: closed with Z`, focus: subBox(e, sp) }], { sub: i });
       });
     }
   }
-  // geometry that can never be seen (under opaque shapes above)
+  // geometry that can never be seen: only when CERTAINLY hidden (see repairs.js) - zero
+  // visible coverage here and at 4x, and a render that does not change at all
   if (S.removeHidden) {
     const vis = subpathVisibility(ctx);
     for (let k = doc.elements.length - 1; k >= 0; k--) {
       const e = doc.elements[k];
       if (!editable(ctx, e) || e.stroke.kind !== 'none' || referenced.has(e.idx)) continue;
       const hidden = [];
-      (vis.get(e) || []).forEach((v, i) => { if (v.total > 0 && (v.visible <= 2 || v.visible <= 0.01 * v.total)) hidden.push({ i, v }); });
+      (vis.get(e) || []).forEach((v, i) => { if (v.total > 0 && v.visible === 0 && certainlyHidden(ctx, e, e.subpaths[i])) hidden.push(i); });
       if (!hidden.length) continue;
       if (hidden.length === e.subpaths.length && !e.id) {
-        const sub = [];
-        const ok = attempt(ctx, P, 'hidden element', e, [{ subpaths: sub, confidence: 0.97, topologyChange: true, label: 'completely covered by shapes above', focus: boxOf(e, e.subpaths) }]);
+        const ok = attempt(ctx, P, 'hidden element', e, [{ subpaths: [], strict: true, topologyChange: true, label: 'completely covered by shapes above', focus: boxOf(e, e.subpaths) }]);
         if (ok) e.removed = true;
         continue;
       }
-      const all = e.subpaths.filter((sp, i) => !hidden.some((h) => h.i === i));
-      const ok = attempt(ctx, P, 'hidden contours', e, [{ subpaths: all, confidence: 0.97, topologyChange: true, label: `${hidden.length} contour(s) covered by shapes above`, focus: boxOf(e, e.subpaths) }]);
+      const all = e.subpaths.filter((sp, i) => !hidden.includes(i));
+      const ok = attempt(ctx, P, 'hidden contours', e, [{ subpaths: all, strict: true, topologyChange: true, label: `${hidden.length} contour(s) covered by shapes above`, focus: boxOf(e, e.subpaths) }]);
       if (!ok) for (const h of hidden.reverse()) {
-        const idx = e.subpaths.indexOf(e.subpaths[h.i]);
-        attempt(ctx, P, 'hidden contours', e, [{ subpaths: e.subpaths.filter((s, i) => i !== idx), confidence: h.v.visible < 0.5 ? 0.98 : 0.95, topologyChange: true, focus: subBox(e, e.subpaths[idx]) }], { sub: idx });
+        const sp = e.subpaths[h];
+        attempt(ctx, P, 'hidden contours', e, [{ subpaths: e.subpaths.filter((s, i) => i !== h), strict: true, topologyChange: true, focus: subBox(e, sp) }]);
       }
     }
+    refreshOcclusion(ctx);
+  }
+  // repairs of accidental geometry (each judged by attempt on its own evidence)
+  if (S.topologyRepair) {
+    duplicates(ctx, P, referenced);
+    tinyArtifacts(ctx, P, referenced);
+    joinBrokenStrokes(ctx, P, (e) => strokeLocked(ctx, e));
+    loopRepair(ctx, P);
     refreshOcclusion(ctx);
   }
 }
@@ -117,7 +134,7 @@ export function passDuplicates(ctx) {
       relink(segs, sp.closed);
       if (segs.length < (sp.closed ? 1 : 1)) return;
       const cand = { ...sp, segs };
-      attempt(ctx, P, zero ? 'zero-length segment' : 'near-duplicate point', e, [{ subpaths: replaceSub(e.subpaths, i, cand), confidence: nearN ? 0.98 : 0.995, label: `${zero} zero-length, ${nearN} near-duplicate`, geom: [{ cur: sp, cand, maxDev: 0.2 }], focus: subBox(e, sp) }], { sub: i });
+      attempt(ctx, P, zero ? 'zero-length segment' : 'near-duplicate point', e, [{ subpaths: replaceSub(e.subpaths, i, cand), label: `${zero} zero-length, ${nearN} near-duplicate`, geom: [{ cur: sp, cand, maxDev: 0.2 }], focus: subBox(e, sp) }], { sub: i });
     });
   }
 }
@@ -147,7 +164,7 @@ export function passMicro(ctx) {
       const size = spSize(sp), microT = Math.min(S.micro * u, 0.02 * size);
       if (size < 25 * microT) { return; }                   // small detail: protected
       const segs = sp.segs.map(cloneSeg), fixes = [];
-      let conf = 1;
+      let bevel = false;
       for (let k = 0; k < segs.length; k++) {
         if (segs.length < 4) break;
         const s = segs[k], L = segLength(s);
@@ -163,8 +180,8 @@ export function passMicro(ctx) {
           const t1 = tanOut(prev), t2 = tanIn(next), den = cross(t1, t2);
           const m = mul(add(segStart(s), segEnd(s)), 0.5);
           if (Math.abs(den) > 1e-9) { const d = sub(segStart(next), segEnd(prev)), tt = cross(d, t2) / den, c = add(segEnd(prev), mul(t1, tt)); target = dist(c, m) < 2 * L + 0.05 * u ? c : m; } else target = m;
+          bevel = true;
         } else continue;                                                                     // a real feature
-        conf = Math.min(conf, L < 0.25 * microT ? 0.97 : 0.92);
         moveEnd(prev, target); moveStart(next, target);
         segs.splice(k, 1); k--;
         fixes.push(L);
@@ -172,7 +189,9 @@ export function passMicro(ctx) {
       if (!fixes.length) return;
       relink(segs, sp.closed);
       const cand = { ...sp, segs };
-      attempt(ctx, P, 'micro-segment', e, [{ subpaths: replaceSub(e.subpaths, i, cand), confidence: conf, label: `${fixes.length} micro-segment(s) < ${(microT * (e.scale || 1) / ctx.u / 10).toFixed(2)}%`, geom: [{ cur: sp, cand, maxDev: Math.min(S.maxDev, 0.6) }], focus: subBox(e, sp) }], { sub: i });
+      // a tracer's bevel cut into a corner is a defect (the corner is restored); tiny noise
+      // on a smooth stretch is only removed (node reduction)
+      attempt(ctx, P, 'micro-segment', e, [{ subpaths: replaceSub(e.subpaths, i, cand), cls: bevel ? [REPAIR, 'geometry correction'] : [OPTIMIZATION, 'node reduction'], label: `${fixes.length} micro-segment(s) < ${(microT * (e.scale || 1) / ctx.u / 10).toFixed(2)}%`, geom: [{ cur: sp, cand, maxDev: Math.min(S.maxDev, 0.6) }], focus: subBox(e, sp) }], { sub: i });
     });
   }
 }
@@ -218,7 +237,7 @@ export function passCollinear(ctx) {
       if (out.length >= n && !out.some((g, q) => g.t !== segs[q].t)) return;
       relink(out, sp.closed);
       const cand = { ...sp, segs: out };
-      attempt(ctx, P, 'collinear points', e, [{ subpaths: replaceSub(e.subpaths, i, cand), confidence: 0.99 - 0.08 * Math.min(1, worst), label: `${removed} node(s) on straight lines`, geom: [{ cur: sp, cand, maxDev: Math.max(S.simplify, 0.3) * 1.2 }], focus: subBox(e, sp) }], { sub: i });
+      attempt(ctx, P, 'collinear points', e, [{ subpaths: replaceSub(e.subpaths, i, cand), label: `${removed} node(s) on straight lines`, geom: [{ cur: sp, cand, maxDev: Math.max(S.simplify, 0.3) * 1.2 }], focus: subBox(e, sp) }], { sub: i });
     });
   }
 }
@@ -259,7 +278,7 @@ export function passAnalysis(ctx) {
     const importance = Math.min(1, 0.35 * Math.min(1, Math.sqrt(area / totalArea) * 2) + 0.25 * contrast + 0.15 * centre + 0.15 * isolation * (area < totalArea * 0.01 ? 1 : 0.3) + 0.1 * Math.min(1, cx.score / 10));
     return { importance: +importance.toFixed(2), contrast: +contrast.toFixed(2), subs, complexity: cx };
   });
-  record(ctx, { pass: 'curve analysis', op: 'analysis', accepted: null, confidence: 1, reason: `${organic} organic, ${geometric} geometric contours, ${details} protected details` });
+  record(ctx, { pass: 'curve analysis', op: 'analysis', accepted: null, reason: `${organic} organic, ${geometric} geometric contours, ${details} protected details` });
 }
 
 // ---------------------------------------------------------------- Pass 6
@@ -273,6 +292,9 @@ export function passFit(ctx) {
     const info = ctx.info[e.idx];
     const u = lu(ctx, e), hid = hiddenFn(ctx, e);
     e.subpaths.forEach((x, i) => {
+      // a smooth node broken by one outlier handle is repaired first; the repaired
+      // contour is final (refitting it would move it again within the tolerance)
+      if (S.topologyRepair && kinkRepair(ctx, P, e, i)) return;
       const sp = e.subpaths[i], si = info && info.subs[i];
       if (!sp.segs.length || sp.segs.length < 3) return;
       const size = spSize(sp);
@@ -281,12 +303,12 @@ export function passFit(ctx) {
       const sizeF = Math.max(0.5, Math.min(1.5, Math.sqrt(size / (150 * u))));
       const base = S.curve * u * sizeF * (1.15 - 0.4 * imp) * (si && si.detail ? 0.5 : 1) * (si && si.organic > 0.6 ? 0.8 : 1);
       const cands = [];
-      for (const [f, conf] of [[0.5, 0.96], [1, 0.94], [1.6, 0.915]]) {
+      for (const f of [0.5, 1, 1.6]) {
         const tol = base * f;
         const segs = refitContour(sp, tol, u, S, hid, si);
         if (!segs || segs.length >= sp.segs.length) continue;
         const cand = { ...sp, segs };
-        cands.push({ subpaths: replaceSub(e.subpaths, i, cand), confidence: conf, label: `refit at ${(tol * (e.scale || 1) / ctx.u / 10).toFixed(2)}% tolerance`, geom: [{ cur: sp, cand, maxDev: S.maxDev * sizeF * (si && si.detail ? 0.5 : 1), hidden: hid }], focus: subBox(e, sp) });
+        cands.push({ subpaths: replaceSub(e.subpaths, i, cand), label: `refit at ${(tol * (e.scale || 1) / ctx.u / 10).toFixed(2)}% tolerance`, geom: [{ cur: sp, cand, maxDev: S.maxDev * sizeF * (si && si.detail ? 0.5 : 1), hidden: hid }], focus: subBox(e, sp) });
       }
       if (cands.length) attempt(ctx, P, 'curve reconstruction', e, cands, { sub: i });
     });
@@ -337,49 +359,85 @@ function smoothJoins(segs, cornerAngle, closed) {
 }
 
 // ---------------------------------------------------------------- Pass 7
-// Shape recognition (circle, ellipse, rectangle, rounded rectangle, triangle, polygon)
-// with organic-shape protection; optional symmetry correction.
-export function passShapes(ctx, before) {
+// Shape recognition (circle, ellipse, rectangle, rounded rectangle, triangle, polygon).
+// Recognition is done on the contour as drawn (after structural cleanup), and the
+// decision on measured evidence only (repairs.js primitiveEvidence: deviation, area,
+// perimeter, corners, regularity; then the local and global render in attempt). A
+// shape that departs from the primitive on purpose is kept as drawn.
+// Repetition: circles of the same size (within 2 %) drawn three or more times are
+// rebuilt with their common radius when every copy still meets the evidence limits.
+// Optional symmetry correction, also on measured deviation only.
+const PRIMITIVES = ['circle', 'ellipse', 'rectangle', 'rounded-rectangle', 'triangle', 'quadrilateral', 'polygon'];
+const primSize = (r) => r.kind === 'circle' ? r.params.r : r.kind === 'ellipse' ? Math.min(r.params.rx, r.params.ry) : r.kind === 'rounded-rectangle' ? Math.min(r.params.w, r.params.h) : (() => { const V = r.params.vertices, b = bbox(V); return Math.max(1e-12, Math.min(b[2] - b[0], b[3] - b[1], ...V.map((v, k) => dist(v, V[(k + 1) % V.length])))); })();
+export function passShapes(ctx, before, ref = before) {
   const P = 'shape recognition', S = ctx.S;
+  const items = [];
   for (const e of ctx.doc.elements) {
     if (!editable(ctx, e) || strokeLocked(ctx, e)) continue;
     const info = ctx.info[e.idx];
     if (!info) continue;
+    const refs = ref && ref[e.idx] && ref[e.idx].subpaths.length === e.subpaths.length ? ref[e.idx].subpaths : e.subpaths;
     const u = lu(ctx, e);
     e.subpaths.forEach((x, i) => {
-      const sp = e.subpaths[i], si = info.subs[i];
-      if (!sp || !sp.closed || !si) return;
-      // recognise on the geometry as drawn (before curve fitting), apply to the current
-      const pre = before && before[e.idx].subpaths[i] && before[e.idx].subpaths.length === e.subpaths.length ? before[e.idx].subpaths[i] : sp;
-      const rec = recognize(pre, u);
-      const best = rec[0];
-      if (best && best.confidence >= Math.min(S.shapeSensitivity, 0.999)) {
-        if (si.organic > 0.5 && best.confidence < 0.99) { record(ctx, { pass: P, op: `${best.kind} reconstruction`, el: e.idx, sub: i, accepted: false, confidence: best.confidence, reason: `organic shape protected (organic score ${si.organic})` }); }
-        else {
-          const segs = primitiveSegs(best, sp);
-          if (segs && (segs.length < sp.segs.length || segs.some((g) => g.t === 'A') && !sp.segs.every((g) => g.t === 'A'))) {
-            const cand = { ...sp, segs };
-            attempt(ctx, P, `${best.kind} reconstruction`, e, [{ subpaths: replaceSub(e.subpaths, i, cand), confidence: best.confidence, label: `${best.kind} (deviation ${(best.deviation * (e.scale || 1) / ctx.u / 10).toFixed(3)}%)`, geom: [{ cur: sp, cand, maxDev: S.maxDev }], focus: subBox(e, sp) }], { sub: i });
-          }
-        }
-      }
-      // symmetry correction: only with strong evidence
-      const sym = si.sym;
-      if (S.symmetry && sym) {
-        const axis = sym.vertical.confidence >= sym.horizontal.confidence ? 'vertical' : 'horizontal';
-        const s = sym[axis];
-        if (s.confidence >= 0.9 && s.deviation > 0.15 * u) {
-          const cur = e.subpaths[i];
-          const segs = symmetrize(cur, axis, s.axis, u, S);
-          if (segs) {
-            const cand = { ...cur, segs };
-            attempt(ctx, P, 'symmetry correction', e, [{ subpaths: replaceSub(e.subpaths, i, cand), confidence: Math.min(0.99, s.confidence * 0.95), label: `${axis} mirror symmetry ${(s.confidence * 100).toFixed(0)}%`, geom: [{ cur, cand, maxDev: S.maxDev }], focus: subBox(e, cur) }], { sub: i });
-          }
-        }
-      }
+      const r0 = refs[i], si = info.subs[i];
+      if (!r0 || !r0.closed || !si) return;
+      const rec = recognize(r0, u).filter((r) => PRIMITIVES.includes(r.kind) && !(r.kind === 'polygon' && r.params.vertices.length > 8));
+      if (rec.length) items.push({ e, i, r0, rec, u });
     });
   }
+  // repetition / context: circles of one size drawn several times
+  const circ = items.map((it) => ({ it, c: it.rec.find((r) => r.kind === 'circle') })).filter((x) => x.c);
+  for (const x of circ) {
+    const R = x.c.params.r * (x.it.e.scale || 1);
+    const same = circ.filter((y) => Math.abs(y.c.params.r * (y.it.e.scale || 1) - R) <= 0.02 * R);
+    if (same.length >= 3) { const rs = same.map((y) => y.c.params.r * (y.it.e.scale || 1)).sort((a, b) => a - b); x.it.common = rs[Math.floor(rs.length / 2)] / (x.it.e.scale || 1); x.it.repeats = same.length; }
+  }
+  for (const it of items) {
+    const { e, i, r0, u } = it, sp = e.subpaths[i];
+    // every recognised primitive, closest first; the common size of a repeated circle first
+    const tries = [];
+    for (const r of [...it.rec].sort((a, b) => a.deviation - b.deviation)) {
+      if (r.kind === 'circle' && it.common && Math.abs(it.common - r.params.r) > 1e-9) tries.push({ ...r, params: { ...r.params, r: it.common }, common: true });
+      tries.push(r);
+    }
+    let done = false;
+    for (const r of tries) {
+      // the fit's own error is a lower bound of the distance: far fits are not measured
+      if (!r.common && r.deviation > S.maxDev * u) { record(ctx, { pass: P, op: `${r.kind} reconstruction`, el: e.idx, sub: i, accepted: false, reason: `deviation ${(r.deviation / u).toFixed(2)} u from the ${r.kind} is above ${S.maxDev} u` }); continue; }
+      const segs = primitiveSegs(r, r0);
+      if (!segs) continue;
+      const cand = { ...sp, segs, start: segs[0].p[0] };
+      // a primitive that does not even share the outline's box is not this shape (and
+      // a degenerate fit, such as a huge circle through a sliver, is not measured at all)
+      const bA = spBox(r0), bB = spBox(cand), off = Math.max(...bA.map((v, k) => Math.abs(v - bB[k])));
+      if (!(off <= S.maxDev * u)) { record(ctx, { pass: P, op: `${r.kind} reconstruction`, el: e.idx, sub: i, accepted: false, reason: `the ${r.kind} does not fit the outline's box (off by ${(off / u).toFixed(1)} u)` }); continue; }
+      if (segs.length >= sp.segs.length && !(segs.some((g) => g.t === 'A') && !sp.segs.every((g) => g.t === 'A')) && hausdorffU(r0, cand, u) < 0.1) continue;   // already this primitive
+      const { evidence, why } = primitiveEvidence(ctx, e, r0, cand, r.kind, primSize(r));
+      const label = `${r.kind}${r.common ? ` (common radius of ${it.repeats} repeated circles)` : ''}: deviation ${evidence.hausdorff.toFixed(2)} u, area ${(evidence.areaError * 100).toFixed(2)}%, perimeter ${(evidence.perimeterError * 100).toFixed(2)}%`;
+      if (why) { record(ctx, { pass: P, op: `${r.kind} reconstruction`, el: e.idx, sub: i, accepted: false, label, reason: why, evidence }); continue; }
+      // exact already (only the path data changes): normalization, not a repair
+      const cls = evidence.hausdorff <= 0.1 ? [OPTIMIZATION, 'path normalization'] : [REPAIR, 'primitive reconstruction'];
+      if (attempt(ctx, P, `${r.kind} reconstruction`, e, [{ subpaths: replaceSub(e.subpaths, i, cand), cls, supersedes: true, allowMore: true, evidence, label, geom: [{ cur: sp, cand, maxDev: S.maxDev }], focus: subBox(e, sp) }], { sub: i })) { done = true; break; }
+    }
+    if (done) continue;
+    // symmetry correction: only when the measured mirror deviation is small (below 0.5 %
+    // of the size: a slip of the hand, not a design) and above noise
+    const si = ctx.info[e.idx].subs[i], sym = si.sym;
+    if (S.symmetry && sym) {
+      const axis = sym.vertical.deviation <= sym.horizontal.deviation ? 'vertical' : 'horizontal';
+      const sm = sym[axis];
+      if (sm.deviation <= 0.005 * sym.size && sm.deviation > 0.15 * u) {
+        const cur = e.subpaths[i];
+        const segs = symmetrize(cur, axis, sm.axis, u, S);
+        if (segs) {
+          const cand = { ...cur, segs };
+          attempt(ctx, P, 'symmetry correction', e, [{ subpaths: replaceSub(e.subpaths, i, cand), label: `${axis} mirror deviation ${(sm.deviation / u).toFixed(2)} u`, geom: [{ cur, cand, maxDev: S.maxDev }], focus: subBox(e, cur) }], { sub: i });
+        }
+      }
+    }
+  }
 }
+const hausdorffU = (a, b, u) => curveDistance(a, b, u) / u;
 function primitiveSegs(r, sp) {
   const ccw = polyArea(sampleNative(sp, spSize(sp) / 64).pts) < 0;       // y-down: negative = counter-clockwise on screen
   const sweep = ccw ? 0 : 1;
@@ -441,7 +499,7 @@ export function passTopology(ctx, ref) {
       const ia = r.subpaths.reduce((s, sp) => s + (sp.closed ? selfX(sp, u) : 0), 0), ib = e.subpaths.reduce((s, sp) => s + (sp.closed ? selfX(sp, u) : 0), 0);
       if (ib > ia) bad = `self-intersections ${ia}->${ib}`;
     }
-    if (bad) { e.subpaths = r.subpaths; record(ctx, { pass: P, op: 'topology rollback', el: e.idx, accepted: false, confidence: 1, reason: bad }); }
+    if (bad) { e.subpaths = r.subpaths; dropChanges(ctx, e.idx); record(ctx, { pass: P, op: 'topology rollback', el: e.idx, accepted: false, reason: bad }); }
   }
 }
 import { selfIntersections } from './geom.js';
@@ -466,13 +524,14 @@ export function passVisual(ctx, ref) {
         errs.push({ e, i, share: r.share, solid: r.solid });
         if (bad(r)) {
           e.subpaths = replaceSub(e.subpaths, i, orig[i]);
-          record(ctx, { pass: P, op: 'contour rollback', el: e.idx, sub: i, accepted: false, confidence: 1, reason: `contour region error ${(r.share * 100).toFixed(2)}% after all passes` });
+          dropChanges(ctx, e.idx, i);
+          record(ctx, { pass: P, op: 'contour rollback', el: e.idx, sub: i, accepted: false, reason: `contour region error ${(r.share * 100).toFixed(2)}% after all passes` });
         }
       });
     } else {
       const r = regionCheck(ctx, e, e.subpaths, unionBox(boxOf(e, e.subpaths), boxOf(e, orig)));
       errs.push({ e, share: r.share, solid: r.solid });
-      if (bad(r)) { e.subpaths = orig; record(ctx, { pass: P, op: 'object rollback', el: e.idx, accepted: false, confidence: 1, reason: `object error ${(r.share * 100).toFixed(2)}% (${r.solid} px spot) after all passes` }); }
+      if (bad(r)) { e.subpaths = orig; dropChanges(ctx, e.idx); record(ctx, { pass: P, op: 'object rollback', el: e.idx, accepted: false, reason: `object error ${(r.share * 100).toFixed(2)}% (${r.solid} px spot) after all passes` }); }
     }
   }
   let g = globalCheck(ctx);
@@ -482,14 +541,16 @@ export function passVisual(ctx, ref) {
     if (i != null) {
       if (e.subpaths[i] === ref[e.idx].subpaths[i] || e.subpaths.length !== ref[e.idx].subpaths.length) continue;
       e.subpaths = replaceSub(e.subpaths, i, ref[e.idx].subpaths[i]);
+      dropChanges(ctx, e.idx, i);
     } else {
       if (e.subpaths === ref[e.idx].subpaths) continue;
       e.subpaths = ref[e.idx].subpaths;
+      dropChanges(ctx, e.idx);
     }
-    record(ctx, { pass: P, op: 'object rollback', el: e.idx, accepted: false, confidence: 1, reason: `global visible difference ${(g.visibleShare * 100).toFixed(3)}% above ${(S.globalMax * 100).toFixed(3)}%` });
+    record(ctx, { pass: P, op: 'object rollback', el: e.idx, sub: i ?? null, accepted: false, reason: `global visible difference ${(g.visibleShare * 100).toFixed(3)}% above ${(S.globalMax * 100).toFixed(3)}%` });
     g = globalCheck(ctx);
   }
-  record(ctx, { pass: P, op: 'global check', accepted: g.visibleShare <= S.globalMax, confidence: 1, reason: `pixel difference ${(g.pixelShare * 100).toFixed(3)}%, mean ΔE ${g.mean.toFixed(3)}, structural ${(g.structural * 100).toFixed(3)}%` });
+  record(ctx, { pass: P, op: 'global check', accepted: g.visibleShare <= S.globalMax, reason: `pixel difference ${(g.pixelShare * 100).toFixed(3)}%, mean ΔE ${g.mean.toFixed(3)}, structural ${(g.structural * 100).toFixed(3)}%` });
   ctx.final = g;
 }
 
@@ -513,7 +574,7 @@ export function passFinal(ctx) {
       const merged = [...a.subpaths, ...b.subpaths];
       const saved = b.subpaths;
       b.removed = true;
-      const ok = attempt(ctx, P, 'merge paths', a, [{ subpaths: merged, confidence: 0.95, topologyChange: true, label: 'same style, drawn one after the other', focus: unionBox(boxOf(a, a.subpaths), boxOf(b, saved)) }]);
+      const ok = attempt(ctx, P, 'merge paths', a, [{ subpaths: merged, topologyChange: true, label: 'same style, drawn one after the other', focus: unionBox(boxOf(a, a.subpaths), boxOf(b, saved)) }]);
       if (!ok) b.removed = false;
       else { list[k + 1] = a; (ctx.merged ||= {})[a.idx] = [...(ctx.merged[a.idx] || []), b.idx, ...(ctx.merged[b.idx] || [])]; }   // keep merging into a; remember the partners
     }
@@ -538,8 +599,9 @@ export function passFinal(ctx) {
       rejectedDigits++;
     }
     e.digits = digits;
+    noteChange(ctx, { el: e.idx, op: 'precision', pass: P });
   }
-  record(ctx, { pass: P, op: 'precision', accepted: true, confidence: 1, reason: `${S.precision === 'adaptive' ? 'adaptive decimals per element' : S.precision + ' decimals'}, each validated on the written geometry (${rejectedDigits} rounding(s) rejected as visible)` });
+  record(ctx, { pass: P, op: 'precision', accepted: true, reason: `${S.precision === 'adaptive' ? 'adaptive decimals per element' : S.precision + ' decimals'}, each validated on the written geometry (${rejectedDigits} rounding(s) rejected as visible)` });
 }
 function e_hasRefs(e) { return (e.clips && e.clips.length) || (e.masks && e.masks.length) || e.fill.kind === 'gradient' || e.fill.kind === 'pattern'; }
 function precisionOk(a, b, tol) {
@@ -576,7 +638,7 @@ function flattenTransforms(ctx) {
     else if (e.fill.kind === 'gradient' || e.fill.kind === 'pattern' || e.stroke.kind === 'gradient' || e.stroke.kind === 'pattern') why = 'gradient / pattern would be distorted';
     else if ((e.clips && e.clips.length) || (e.masks && e.masks.length)) why = 'clip / mask is in the same coordinate system';
     else if (e.stroke.kind !== 'none' && !isUniform(m)) why = 'non-uniform scale changes the stroke';
-    if (why) { record(ctx, { pass: P, op: 'flatten transform', el: e.idx, accepted: false, confidence: 1, reason: why }); continue; }
+    if (why) { record(ctx, { pass: P, op: 'flatten transform', el: e.idx, accepted: false, reason: why }); continue; }
     const tf = (q) => apply(m, q), uni = isUniform(m), sc = scaleOf(m), det = m[0] * m[3] - m[1] * m[2];
     const rot = (Math.atan2(m[1], m[0]) * 180) / Math.PI;
     const subs = e.subpaths.map((sp) => ({ ...sp, start: sp.start && tf(sp.start), segs: sp.segs.flatMap((g) => {
@@ -586,8 +648,8 @@ function flattenTransforms(ctx) {
     const saved = { subpaths: e.subpaths, ctm: e.ctm, scale: e.scale, strokeWidth: e.strokeWidth };
     e.ctm = parentCtm; e.scale = scaleOf(parentCtm); e.strokeWidth = e.strokeWidth * sc;
     const v = regionCheck(ctx, e, subs, null);
-    if (v.ok) { e.subpaths = subs; e.flat = { strokeWidth: e.strokeWidth, scale: sc }; record(ctx, { pass: P, op: 'flatten transform', el: e.idx, accepted: true, confidence: 0.99, reason: `transform applied to the coordinates (visual deviation ${(v.share * 100).toFixed(2)}%)` }); }
-    else { Object.assign(e, saved); record(ctx, { pass: P, op: 'flatten transform', el: e.idx, accepted: false, confidence: 0.99, reason: 'visual deviation after flattening' }); }
+    if (v.ok) { e.subpaths = subs; e.flat = { strokeWidth: e.strokeWidth, scale: sc }; record(ctx, { pass: P, op: 'flatten transform', el: e.idx, accepted: true, reason: `transform applied to the coordinates (visual deviation ${(v.share * 100).toFixed(2)}%)` }); }
+    else { Object.assign(e, saved); record(ctx, { pass: P, op: 'flatten transform', el: e.idx, accepted: false, reason: 'visual deviation after flattening' }); }
   }
 }
 import { parseTransform } from './matrix.js';

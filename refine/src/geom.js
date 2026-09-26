@@ -107,15 +107,18 @@ export function hausdorff(A, B, cellSize) {
   const bb = bbox(A.concat(B)), cell = cellSize || Math.max(1e-9, Math.max(bb[2] - bb[0], bb[3] - bb[1]) / 64);
   const one = (P, Q) => {
     const grid = new Map();
-    const key = (x, y) => (Math.floor(x / cell) * 73856093) ^ (Math.floor(y / cell) * 19349663);
-    for (const q of Q) { const k = key(q[0], q[1]); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(q); }
+    // neighbour cells by index: floor((y - cell) / cell) is not always floor(y / cell) - 1
+    // in floating point (60 / 0.2 = 300 but 59.8 / 0.2 = 298.99..), which skipped cells
+    const key = (i, j) => (i * 73856093) ^ (j * 19349663);
+    for (const q of Q) { const k = key(Math.floor(q[0] / cell), Math.floor(q[1] / cell)); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(q); }
     let worst = 0;
     for (const p of P) {
       let best = Infinity;
+      const ix = Math.floor(p[0] / cell), iy = Math.floor(p[1] / cell);
       for (let r = 0; r < 64 && best > (r - 1) * cell; r++) {
         for (let gx = -r; gx <= r; gx++) for (let gy = -r; gy <= r; gy++) {
           if (Math.max(Math.abs(gx), Math.abs(gy)) !== r) continue;
-          const arr = grid.get(key(p[0] + gx * cell, p[1] + gy * cell));
+          const arr = grid.get(key(ix + gx, iy + gy));
           if (arr) for (const q of arr) { const d = dist(p, q); if (d < best) best = d; }
         }
       }

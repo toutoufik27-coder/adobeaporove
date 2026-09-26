@@ -14,10 +14,11 @@ const SETTINGS = [
   ['curve', 'تسامح المنحنيات (‰)', 'number', 0.1],
   ['maxDev', 'أقصى انحراف مسموح (‰)', 'number', 0.1],
   ['cornerAngle', 'حماية الزوايا (درجة: أقل = زوايا أكثر)', 'number', 1],
-  ['shapeSensitivity', 'حد التعرف على الأشكال (0–1)', 'number', 0.01],
+  ['shapeMaxDev', 'أقصى انحراف لإعادة بناء شكل هندسي (نسبة من حجمه)', 'number', 0.001],
+  ['shapeSystematic', 'انحراف منتظم يُعتبر شكلاً مقصوداً (نسبة من حجمه)', 'number', 0.001],
   ['micro', 'حد المقاطع الدقيقة (‰)', 'number', 0.1],
   ['precision', 'الدقة العشرية', 'select', ['adaptive', '1', '2', '3', '4']],
-  ['minConfidence', 'أدنى ثقة للتطبيق (0–1)', 'number', 0.01],
+  ['maxAreaError', 'أقصى تغير في مساحة الحد (نسبة)', 'number', 0.001],
   ['regionMax', 'أقصى خطأ بصري لكل شكل (نسبة)', 'number', 0.001],
   ['symmetry', 'تصحيح التناظر', 'bool'],
   ['topologyRepair', 'إصلاح الطوبولوجيا', 'bool'],
@@ -29,7 +30,27 @@ const SETTINGS = [
 
 // Engine messages are English (logs, CLI); the page shows them in Arabic.
 const TR = [
-  [/^confidence (\d+)% is below (\d+)%$/, 'الثقة $1% أقل من الحد $2%'],
+  [/^outline moved more than ([\d.]+)% of the artwork \(all steps together, from the original contour\)$/, 'الحافة ستبتعد أكثر من $1% عن الحد الأصلي (مجموع كل الخطوات)'],
+  [/^area changed by ([\d.]+)% \(limit ([\d.]+)%\)$/, 'تتغير المساحة بنسبة $1% (الحد $2%)'],
+  [/^the render changes \((\d+) px\): not certainly hidden$/, 'الرسم يتغير ($1 بكسل): ليس مخفياً بشكل مؤكد'],
+  [/^removal changes ([\d.]+) px \(limit ([\d.]+) px\)$/, 'الحذف يغيّر $1 بكسل (الحد $2)'],
+  [/^kept: (\d+) other marks of the same size.*$/, 'أُبقي: $1 علامات أخرى بنفس الحجم (نمط مقصود، ليس شائبة)'],
+  [/^isolated speck ([\d.]+) u \(limit ([\d.]+) u\)$/, 'نقطة شاردة $1 u (الحد $2 u)'],
+  [/^drawn again as element #(\d+)$/, 'مرسوم مرة ثانية كعنصر #$1'],
+  [/^subpaths (\d+) and (\d+) meet at one node.*$/, 'المساران الفرعيان $1 و$2 يلتقيان في عقدة واحدة'],
+  [/^ends ([\d.]+) u apart: closed with Z$/, 'الطرفان متباعدان $1 u: أُغلق الحد'],
+  [/^loop of ([\d.]+) u cut at the crossing$/, 'حلقة طولها $1 u قُطعت عند التقاطع'],
+  [/^(\d+) broken smooth node\(s\).*$/, '$1 عقدة ناعمة مكسورة (نقطة تحكم شاذة)'],
+  [/^deviation ([\d.]+) u from the ([\w-]+) is above ([\d.]+) u$/, 'الانحراف $1 u عن الشكل الهندسي أكبر من $3 u'],
+  [/^deviation ([\d.]+)% of its size is above ([\d.]+)%$/, 'الانحراف $1% من حجم الشكل أكبر من $2%'],
+  [/^the outline departs from the ([\w-]+) systematically \(([\d.]+)% of its size\): an intentional shape, kept$/, 'الحد يبتعد عن الشكل الهندسي بانتظام ($2% من حجمه): شكل مقصود، أُبقي كما هو'],
+  [/^area differs by ([\d.]+)% \(limit ([\d.]+)%\)$/, 'المساحة تختلف بنسبة $1% (الحد $2%)'],
+  [/^perimeter differs by ([\d.]+)% \(limit ([\d.]+)%\)$/, 'المحيط يختلف بنسبة $1% (الحد $2%)'],
+  [/^the outline has (\d+) real corner\(s\).*$/, 'الحد فيه $1 زاوية حقيقية: ليس دائرة أو شكلاً بيضوياً'],
+  [/^corners would change.*$/, 'ستتغير الزوايا'],
+  [/^the ([\w-]+) does not fit the outline's box.*$/, 'الشكل الهندسي لا يطابق صندوق الحد'],
+  [/^([\w-]+): deviation ([\d.]+) u, area ([\d.]+)%, perimeter ([\d.]+)%$/, 'انحراف $2 u، مساحة $3%، محيط $4%'],
+  [/^(\w+) mirror deviation ([\d.]+) u$/, 'انحراف التناظر $2 u'],
   [/^topology would change.*$/, 'سيتغير التركيب (الحدود / الثقوب / التداخل)'],
   [/^would move the gradient.*$/, 'سيحرّك التدرج اللوني (يتغير صندوق الشكل)'],
   [/^outline moved more than ([\d.]+)% of the artwork$/, 'الحافة ستتحرك أكثر من $1% من حجم التصميم'],
@@ -77,7 +98,7 @@ const TR = [
   [/^difference to the source image: mean ΔE ([\d.]+) -> ([\d.]+), wrong pixels ([\d.]+)% -> ([\d.]+)%$/, 'الفرق عن الصورة الأصلية: ΔE $1 ← $2، بكسلات خاطئة $3% ← $4%'],
 ];
 const SHAPE_AR = { circle: 'دائرة', ellipse: 'بيضوي', rectangle: 'مستطيل', 'rounded-rectangle': 'مستطيل بزوايا دائرية', triangle: 'مثلث', polygon: 'مضلع', quadrilateral: 'رباعي' };
-const OP_AR = { 'restore outline': 'إعادة الحافة إلى الصورة', 'image fidelity': 'المطابقة مع الصورة', 'empty element': 'عنصر فارغ', 'invisible element': 'عنصر غير مرئي', 'degenerate contour': 'حد بدون مساحة', 'close open contour': 'إغلاق حد مفتوح', 'hidden element': 'عنصر مخفي', 'hidden contours': 'حدود مخفية', 'zero-length segment': 'مقطع بطول صفر', 'near-duplicate point': 'نقطة شبه مكررة', 'micro-segment': 'مقطع دقيق', 'collinear points': 'نقاط على خط واحد', 'curve reconstruction': 'إعادة بناء منحنى', 'symmetry correction': 'تصحيح تناظر', 'topology rollback': 'إرجاع (طوبولوجيا)', 'object rollback': 'إرجاع شكل', 'contour rollback': 'إرجاع حد', 'global check': 'التحقق الكلي', 'merge paths': 'دمج مسارات', precision: 'الدقة العشرية', 'flatten transform': 'تطبيق التحويل' };
+const OP_AR = { 'restore outline': 'إعادة الحافة إلى الصورة', 'image fidelity': 'المطابقة مع الصورة', 'empty element': 'عنصر فارغ', 'invisible element': 'عنصر غير مرئي', 'degenerate contour': 'حد بدون مساحة', 'close open contour': 'إغلاق حد مفتوح', 'hidden element': 'عنصر مخفي', 'hidden contours': 'حدود مخفية', 'zero-length segment': 'مقطع بطول صفر', 'near-duplicate point': 'نقطة شبه مكررة', 'micro-segment': 'مقطع دقيق', 'collinear points': 'نقاط على خط واحد', 'curve reconstruction': 'إعادة بناء منحنى', 'symmetry correction': 'تصحيح تناظر', 'topology rollback': 'إرجاع (طوبولوجيا)', 'object rollback': 'إرجاع شكل', 'contour rollback': 'إرجاع حد', 'global check': 'التحقق الكلي', 'merge paths': 'دمج مسارات', precision: 'الدقة العشرية', 'flatten transform': 'تطبيق التحويل', 'tiny artifact': 'إزالة شائبة صغيرة', 'duplicate geometry': 'شكل مكرر', 'join broken stroke': 'وصل خط مقطوع', 'self-intersection loop': 'حلقة تقاطع ذاتي', 'kink repair': 'إصلاح نقطة تحكم شاذة' };
 const ar = (s) => { s = String(s ?? ''); for (const [re, to] of TR) if (re.test(s)) return s.replace(re, to); return s; };
 const opAr = (op) => OP_AR[op] || (/^(\S+) reconstruction$/.test(op) ? 'إعادة بناء ' + (SHAPE_AR[op.split(' ')[0]] || op) : op);
 
@@ -282,6 +303,7 @@ function showReport(d) {
       <span>منحنيات أعيد بناؤها</span><b>${c.reconstructedCurves}</b><span>أشكال هندسية اكتُشفت</span><b>${c.detectedShapes}</b>
       <span>تصحيح تناظر</span><b>${c.symmetry}</b><span>مسارات دُمجت</span><b>${c.mergedPaths}</b>
       <span>أجزاء مخفية حُذفت</span><b>${c.removedHidden}</b><span>تعديلات مرفوضة</span><b>${c.rejected}</b></div>
+    ${r.repairVsOptimization ? repairHTML(r.repairVsOptimization) : ''}
     <h2 style="margin-top:10px">${r.image ? 'الفرق البصري بعد المطابقة مع الصورة' : 'الفرق البصري عن الأصل'}</h2>
     ${r.image ? '<p class="muted">بعد إعادة الحواف إلى الصورة، تُقاس بقية المراحل (التبسيط والمنحنيات) على الرسم المصحح حتى لا تُفسده.</p>' : ''}
     <div class="kv"><span>فرق مرئي (بعد تجاهل إزاحة أقل من بكسل)</span><b>${v.visible}%</b><span>بكسلات تغيّرت (صارم)</span><b>${v.pixelDifference}%</b>
@@ -292,11 +314,21 @@ function showReport(d) {
     <span>حواف أعيدت إلى مكانها في الصورة</span><b>${r.image.restored}</b></div>
     <p class="muted">الرقم الأول للـSVG الأصلي، والثاني لهذه المرحلة. الجزء الباقي من الخطأ سببه نعومة حواف الصورة (JPEG)، وليس خطأ في الرسم.</p>` : ''}`;
 }
+// Repair and optimization are reported apart: a smaller file is not a repair.
+const TYPE_AR = { 'primitive reconstruction': 'إعادة بناء شكل هندسي', 'geometry correction': 'تصحيح هندسة', 'broken continuity': 'استمرارية مقطوعة', 'malformed geometry': 'هندسة معطوبة', 'accidental artifacts': 'شوائب عَرَضية', 'topology repair': 'إصلاح طوبولوجيا', 'node reduction': 'تقليل العقد', 'path normalization': 'توحيد صيغة المسار', 'precision reduction': 'تقليل الدقة العشرية', 'redundant command removal': 'حذف أوامر زائدة', 'redundant element removal': 'حذف عناصر زائدة' };
+function repairHTML(x) {
+  const list = (b) => Object.entries(b.byType).map(([k, n]) => `<span>${TYPE_AR[k] || esc(k)}</span><b>${n}</b>`).join('');
+  return `<h2 style="margin-top:10px">إصلاح أم تحسين؟</h2>
+    <div class="kv"><span><b>إصلاحات فعلية</b> (تصحيح الهندسة)</span><b>${x.repairs.total}</b>${list(x.repairs)}</div>
+    <div class="kv"><span><b>تحسينات</b> (حجم وبنية فقط)</span><b>${x.optimizations.total}</b>${list(x.optimizations)}</div>
+    <div class="kv"><span>اقتراحات مرفوضة</span><b>${x.rejected}</b><span>تعديلات أُرجعت بعد قبولها</span><b>${x.rolledBack}</b></div>
+    <p class="muted">صغر حجم الملف ليس دليلاً على الإصلاح.</p>`;
+}
 function showLog() {
   const log = st.result.log.filter((l) => l.op !== 'analysis');
   const f = st.logFilter;
   const rows = log.filter((l) => f === 'all' || (f === 'accepted' ? l.accepted : l.accepted === false)).slice(0, 400);
-  $('logTable').innerHTML = rows.length ? rows.map((l) => `<tr data-el="${l.el ?? ''}"><td class="${l.accepted ? 'ok' : 'no'}">${l.accepted ? '✓' : '✗'}</td><td><b>${esc(l.label ? ar(l.label) : opAr(l.op))}</b> <span class="muted">${l.label ? esc(opAr(l.op)) : ''}</span><br><span class="muted">${esc(PASS_AR[l.pass] || l.pass)}${l.el != null ? ` · عنصر ${l.el}${l.sub != null ? ' / حد ' + l.sub : ''}` : ''} · ثقة ${Math.round((l.confidence || 0) * 100)}%</span><br>${esc(ar(l.reason))}</td></tr>`).join('') : '<tr><td class="muted">لا شيء</td></tr>';
+  $('logTable').innerHTML = rows.length ? rows.map((l) => `<tr data-el="${l.el ?? ''}"><td class="${l.accepted ? 'ok' : 'no'}">${l.accepted ? '✓' : '✗'}</td><td><b>${esc(l.label ? ar(l.label) : opAr(l.op))}</b> <span class="muted">${l.label ? esc(opAr(l.op)) : ''}</span><br><span class="muted">${esc(PASS_AR[l.pass] || l.pass)}${l.el != null ? ` · عنصر ${l.el}${l.sub != null ? ' / حد ' + l.sub : ''}` : ''}${l.cls ? ` · ${l.cls[0] === 'repair' ? 'إصلاح' : 'تحسين'}` : ''}${l.evidence && l.evidence.score != null ? ` · الهامش المتبقي ${Math.round(l.evidence.score * 100)}%` : ''}</span><br>${esc(ar(l.reason))}</td></tr>`).join('') : '<tr><td class="muted">لا شيء</td></tr>';
 }
 $('logFilter').onclick = (e) => { const f = e.target.dataset.f; if (!f) return; st.logFilter = f; for (const b of $('logFilter').children) b.setAttribute('aria-pressed', b.dataset.f === f); showLog(); };
 for (const t of ['logTable', 'anTable']) $(t).onclick = (e) => {
@@ -315,7 +347,8 @@ function showExport(d) {
   $('integ').innerHTML = i.ok
     ? `<div class="good">فحص السلامة ناجح: XML صالح، المسارات صالحة، كل المراجع موجودة، المعرفات فريدة${i.warnings.length ? ` <span class="muted">(${i.warnings.length} تنبيه)</span>` : ''}.</div>`
     : `<div class="warn"><b>فشل فحص السلامة — لا يمكن اعتبار الملف «ناتجاً احترافياً»:</b><ul class="issues">${i.errors.slice(0, 10).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
-  const b = d.browser;
+  const b = d.browser, finalStage = st.result && st.stage === st.result.stages.length - 1;
+  if (!finalStage) $('integ').innerHTML += '<div class="warn">هذه مرحلة وسيطة: لم تمر بالتحقق النهائي (إعادة التحليل والرسم في المتصفح). المرحلة «النهائي» وحدها يتم التحقق منها.</div>';
   if (b) $('integ').innerHTML += b.pending ? '<div class="muted">التحقق البصري في المتصفح جارٍ…</div>'
     : b.ok ? `<div class="good">التحقق البصري في المتصفح ناجح: فرق مرئي ${(b.visible * 100).toFixed(3)}% و${b.solid} بكسل بقع.</div>`
     : `<div class="warn"><b>النتيجة لم تجتز التحقق البصري في المتصفح${b.error ? ' (' + esc(b.error) + ')' : ` (فرق مرئي ${(b.visible * 100).toFixed(3)}%، ${b.solid} بكسل بقع)`}: الملف الأصلي هو المعروض والمُحمَّل.</b></div>`;

@@ -199,13 +199,13 @@ export function passRestore(ctx) {
   }
   const after = imageError(ctx, render(doc, view, { geom: (x) => (x.removed ? null : x.subpaths) }), view);
   ctx.imageFidelity = { before, after };
-  record(ctx, { pass: P, op: 'image fidelity', accepted: after.mean <= before.mean, confidence: 1, reason: `difference to the source image: mean ΔE ${before.mean.toFixed(2)} -> ${after.mean.toFixed(2)}, wrong pixels ${(before.badShare * 100).toFixed(2)}% -> ${(after.badShare * 100).toFixed(2)}%` });
+  record(ctx, { pass: P, op: 'image fidelity', accepted: after.mean <= before.mean, reason: `difference to the source image: mean ΔE ${before.mean.toFixed(2)} -> ${after.mean.toFixed(2)}, wrong pixels ${(before.badShare * 100).toFixed(2)}% -> ${(after.badShare * 100).toFixed(2)}%` });
 }
 
 function judge(ctx, P, e, i, cand) {
   const cur = e.subpaths[i], u = ctx.u / (e.scale || 1);
   const subs = e.subpaths.map((s, k) => (k === i ? cand : s));
-  const base = { pass: P, op: 'restore outline', el: e.idx, sub: i, confidence: 0.9, nodes: [nodesOf([cur]), nodesOf([cand])] };
+  const base = { pass: P, op: 'restore outline', el: e.idx, sub: i, nodes: [nodesOf([cur]), nodesOf([cand])] };
   const unsafe = featureSafety(ctx, e, subs);
   if (unsafe) return record(ctx, { ...base, accepted: false, reason: unsafe });
   const t0 = topology(e.subpaths, e.rule, u), t1 = topology(subs, e.rule, u);

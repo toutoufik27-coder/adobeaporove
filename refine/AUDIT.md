@@ -1,5 +1,7 @@
 # Audit and repair plan: SVG → SVG repair engine (`refine/`)
 
+> Status of every plan item below, checked against the code: REPAIR-LOG.md, phase 5. Measured results: FINAL-AUDIT.md.
+
 Baseline (before any change): `npm test` passes 33/33 in 27 s. A copy of the untouched
 code is kept outside the project for diffing.
 

@@ -124,11 +124,22 @@ export function cloneTree(el, parent = null) {
   return c;
 }
 
+// Text content where whitespace is part of the drawing: written verbatim (every text
+// node kept, nothing indented). Pretty-printing or dropping the space between two
+// <tspan>s changes what the text shows.
+const VERBATIM = new Set(['text', 'tspan', 'textPath', 'tref', 'altGlyph', 'title', 'desc', 'style', 'script']);
+const verbatimNode = (el) => VERBATIM.has(localName(el.name)) || getAttr(el, 'xml:space') === 'preserve';
 // pretty: indent elements (text-bearing elements such as <text>/<style> stay inline)
 export function serialize(root, { pretty = true, indent = '  ' } = {}) {
   const out = [];
+  const exact = (el) => {
+    const attrs = el.attrs.map(([k, v]) => ` ${k}="${escAttr(v)}"`).join('');
+    if (!el.children.length) return `<${el.name}${attrs}/>`;
+    return `<${el.name}${attrs}>` + el.children.map((c) => c.type === 'text' ? (c.cdata ? `<![CDATA[${c.value}]]>` : escText(c.value)) : exact(c)).join('') + `</${el.name}>`;
+  };
   const rec = (el, level) => {
     const pad = pretty ? indent.repeat(level) : '';
+    if (verbatimNode(el)) { out.push(pad + exact(el)); return; }
     const attrs = el.attrs.map(([k, v]) => ` ${k}="${escAttr(v)}"`).join('');
     if (!el.children.length) { out.push(`${pad}<${el.name}${attrs}/>`); return; }
     const hasText = el.children.some((c) => c.type === 'text' && c.value.trim());

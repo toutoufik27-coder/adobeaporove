@@ -47,3 +47,27 @@
   - `preserveAspectRatio`: all 9 alignments × meet / slice, plus none
   - the root view is exactly the region the browser shows, so content outside the viewBox (meet) is now rendered and validated instead of being an uncertain strip
 - Strict transform grammar (from phase 2). Negative scale, reflection, rotation, skew and nested matrices all agree with Chrome (fixtures).
+
+## Phase 5 — final correctness audit (claims checked against the code and the tests)
+
+This log and AUDIT.md were treated as claims, not evidence. Each claim was checked by
+running the code; the full report with the measured numbers is `FINAL-AUDIT.md`.
+
+| Claim | What was found |
+|---|---|
+| "Total 157/157" (phase 3) | Not what the suite reports today. Before this phase: **166/166** with a browser, and **105 passed + 1 SKIP line** without one. That one SKIP line hid 61 conformance checks that were never counted. After this phase: see FINAL-AUDIT.md. |
+| "58/58 files agree with Chrome" | Today there are 61 rows. With Chromium 1194 all 61 were reported "ok", but 7 of them had **100 % of the image excluded** as uncertain (css-descendant, css-important, css-media, css-pseudo, filter-css-function, transform-css, transform-invalid). Nothing was compared there. They are now reported as skipped, not as agreement. The other 54 were confirmed within the stated limit (≤ 0.25 %, 0 spots). |
+| "Browser = source of truth" | Without Chrome / Edge, `validation.ok` was `true` with `browser: "unavailable"`. In a container running as root, Chrome never started at all: it needs `--no-sandbox` there, and the launch error was swallowed. **Fixed:** explicit STRICT / FALLBACK modes, `browserVerified`, `certified`, and the failure reason is kept. |
+| Browser oracle robust | **Bug:** after one failed render, the render queue stayed rejected, so every later file failed as well (a failure that only shows up in sequence). There was also no timeout on DevTools commands, so a hung browser hung the run. **Fixed**, with a regression test. |
+| Plan 7: "delete only when certainly hidden" | **Not implemented.** The `visible <= 2 px or <= 1 %` rule was still there. A visible 0.2-unit ring was deleted in professional mode (reproduced). **Fixed:** zero coverage at 1x and 4x, plus a render that must not change at all. |
+| Plan 8: evidence-based confidence (`src/evidence.js`) | **Not implemented.** Hand-written `confidence` values (0.99, 0.97, 0.915 …) were the gate against `minConfidence`. **Fixed:** decisions use measured evidence only. |
+| Plan 9: evidence-based shape reconstruction | **Not implemented** (`confidence >= shapeSensitivity`). **Fixed**; see FINAL-AUDIT.md. |
+| Plan 10: topology signature with pairwise relations | **Not implemented, and still not implemented.** Listed as remaining. |
+| Plan 12: crop cache capped in bytes (LRU) | **Not implemented.** It was still a count cap (400 entries, cleared all at once): 122 MB of crops on christmas-clock. **Fixed:** byte LRU capped at 48 MB. |
+| Plan 13: `test/adversarial.js` (before / after / topology / geometry per case) | **Not present.** `test/protection.js` covers protection only. The defect fixtures of this phase cover before / after / expected geometry. |
+| "Unchanged paths are not rewritten at 3 decimals" | True for unchanged paths. **Changed paths in an earlier history stage** were still written at 3 decimals without validation. **Fixed:** they are written without rounding. |
+| Final gate judges the exported text | Yes, but the browser reference was the original **re-serialized by the same writer**, so a writer bug could not show. It did hide one: the space between two `<tspan>`s was dropped. **Fixed:** the reference is the input text, and the writer's copy of the original is compared with it (fidelity). |
+| `--no-structure` is safe | **Bug:** unwrapping a `<g>` lost a `g { fill: … }` rule, so a red shape came out black. **Fixed.** |
+| Grid Hausdorff distance (`geom.hausdorff`) | **Bug:** it computed neighbour cells in floating point (59.8 / 0.2 = 298.99…) and skipped cells. It returned 1.02 where brute force gives 0.17, which skewed the symmetry measurements. **Fixed**, with a test. |
+| "50 files in one process: no heap growth" | Confirmed: heap after GC stays 6.0 → 7.0 MB over 72 files. A sequential run is not slower than isolated processes (ratio ≤ 1.12). |
+| README: "christmas-clock 1010 → 317 nodes, 0.148 %"; "bakery: 6 circles rebuilt as real circles" | Not reproducible with the code as delivered: christmas-clock came out at 1010 → 452 nodes without a browser and 1010 → 602 with one. The 6 bakery "circles" were already circles within 0.1 u, so rewriting them is **path normalization, not a repair**. The README now points to the measured numbers. |

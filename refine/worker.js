@@ -33,8 +33,10 @@ self.onmessage = async (ev) => {
       ctx = processDoc(doc, S, (p) => post('progress', { pass: p }), useSrc);
       const last = ctx.history.length - 1;
       const orig = stateOutput(ctx, 0, m.exportOptions || {});
-      // the exported text passes the final validation (re-parsed, re-rendered) before it is shown
-      const out = await finalize(ctx, m.exportOptions || {}, { browser: false });
+      // the exported text passes the final validation (re-parsed, re-rendered) before it is
+      // shown. The worker has no browser oracle: FALLBACK here, and the page then draws
+      // the result in the browser itself (app.js browserCheck) before it can be downloaded.
+      const out = await finalize(ctx, m.exportOptions || {}, { browser: false, validation: 'fallback' });
       const r = report(ctx, text, out.text);
       post('processed', { defaults: MODES, dry: !!m.dry, mode: m.mode, settings: S, report: r, stages: ctx.history.map((h) => ({ name: h.name, nodes: h.nodes })), original: orig.text, output: out.text, integrity: out.integrity, validation: out.validation, log: ctx.log, counts: ctx.counts });
     } else if (m.type === 'stage') {

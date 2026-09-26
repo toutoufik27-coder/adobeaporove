@@ -5,12 +5,21 @@
 // On failure, the changed elements under the differing pixels are returned to their
 // original (with their merge partners) and the whole check runs again. When the output
 // still cannot be proven, the ORIGINAL is returned.
+//
+// Two explicit modes:
+//   STRICT    the browser render is required. Without a browser oracle nothing is
+//             accepted: the original is kept and the reason is reported.
+//   FALLBACK  without a browser, the internal renderer alone may accept the output,
+//             and the result says so: browserVerified = false, level "internal-only".
+// Only a STRICT pass with the browser is a certified ("browser-verified") result.
 import { loadSVG, elementBox } from './model.js';
 import { renderViewFor } from './viewport.js';
 import { render } from './raster.js';
 import { compare } from './metrics.js';
 // the browser oracle is Node-only: loaded on demand, so this module also runs in a web worker
 const getBrowser = async () => (await import('./browser.js')).getBrowser();
+const oracleStatus = async () => (await import('./browser.js')).browserStatus();
+export const STRICT = 'strict', FALLBACK = 'fallback';
 import { exportSVG } from './output.js';
 import { integrity } from './integrity.js';
 import { topology, polyOf } from './features.js';
@@ -18,6 +27,7 @@ import { selfIntersections, flatten } from './geom.js';
 import { expand } from './pathdata.js';
 import { apply } from './matrix.js';
 import { maxScale } from './raster.js';
+import { probe } from './memprobe.js';
 
 // Browser renders of two SVG texts on the same grid. null when no browser is available.
 export async function browserPair(origText, outText, side = 600) {
@@ -38,9 +48,12 @@ export async function browserDiff(origText, outText, side = 600) {
 
 const within = (c, S) => c.visibleShare <= S.globalMax && c.solid <= S.maxSolid * 4;
 const selfX = (subs, u) => subs.reduce((n, sp) => n + (sp.closed ? selfIntersections(polyOf(sp, 0.25 * u), 50) : 0), 0);
+const stat = (c) => ({ visible: c.visibleShare, solid: c.solid, mean: c.mean, pixels: c.pixelShare });
 
-// One full check of a state. Returns { ok, text, failures: [..], mask: Uint8Array | null }.
-async function checkState(ctx, state, opts, useBrowser, origText) {
+// One full check of a state. Returns { ok, internalOk, text, failures, mask, bad,
+// internal, browser }. `oracle` = { browser, ref, rv } or null (then browser = null:
+// not measured, which is never the same as "passed").
+async function checkState(ctx, state, opts, oracle) {
   const { doc, S, view } = ctx, failures = [];
   const text = exportSVG(doc, state, opts);
   const integ = integrity(text);
@@ -66,20 +79,23 @@ async function checkState(ctx, state, opts, useBrowser, origText) {
     // render the re-parsed output again (internal renderer, same grid as the original)
     const img = render(doc2, view, { orig: true });
     const c = compare(ctx.origImg, img, view, { labA: ctx.origLab, radius: Math.max(1, Math.min(3, Math.round(S.maxDev * ctx.u * view.k))) });
-    internal = { visible: c.visibleShare, solid: c.solid, mean: c.mean };
-    if (!within(c, S)) { failures.push({ check: 'internal render', detail: `visible ${(c.visibleShare * 100).toFixed(3)}%, ${c.solid} spot px` }); mask = c.visibleMask; }
-    if (useBrowser) {
-      const bro = await getBrowser();
-      if (bro) {
-        const rv = renderViewFor(doc, S.raster || 700);
-        const A = await bro.render(origText, rv.cssW, rv.cssH), B = await bro.render(text, rv.cssW, rv.cssH);
-        const cb = compare(A.img, B.img, rv.view, { radius: 1 });
-        browser = { visible: cb.visibleShare, solid: cb.solid, mean: cb.mean };
-        if (!within(cb, S)) { failures.push({ check: 'browser render', detail: `visible ${(cb.visibleShare * 100).toFixed(3)}%, ${cb.solid} spot px` }); mask = mask ? mask.map((v, i) => v | cb.visibleMask[i]) : cb.visibleMask; }
-      } else browser = 'unavailable';
+    internal = { ...stat(c), ok: within(c, S) };
+    probe(ctx, 'final validation');
+    if (!internal.ok) { failures.push({ check: 'internal render', detail: `visible ${(c.visibleShare * 100).toFixed(3)}%, ${c.solid} spot px` }); mask = c.visibleMask; }
+  }
+  const internalOk = !failures.length;
+  if (doc2 && oracle) {
+    // the exported text in the browser, against the original in the browser
+    let B = null;
+    try { B = await oracle.browser.render(text, oracle.rv.cssW, oracle.rv.cssH); }
+    catch (err) { browser = { ok: false, error: String(err.message || err) }; failures.push({ check: 'browser render', detail: browser.error }); }
+    if (B) {
+      const cb = compare(oracle.ref, B.img, oracle.rv.view, { radius: 1 });
+      browser = { ...stat(cb), ok: within(cb, S) };
+      if (!browser.ok) { failures.push({ check: 'browser render', detail: `visible ${(cb.visibleShare * 100).toFixed(3)}%, ${cb.solid} spot px` }); mask = mask ? mask.map((v, i) => v | cb.visibleMask[i]) : cb.visibleMask; }
     }
   }
-  return { ok: !failures.length, text, failures, mask, bad, internal, browser, integrity: integ };
+  return { ok: !failures.length, internalOk, text, failures, mask, bad, internal, browser, integrity: integ };
 }
 
 // What changed under the differing pixels. A differing pixel is attributed to a changed
@@ -130,12 +146,40 @@ function offenders(ctx, state, mask, ref) {
 }
 const toPx = (view, m, p) => { const q = apply(m, p); return [(q[0] - view.x) * view.k, (q[1] - view.y) * view.k]; };
 
-export async function finalizeOutput(ctx, opts = {}, { browser = true, maxRounds = 10 } = {}) {
+// The browser oracle for one document: the reference (the original) is rendered once.
+// The reference is the input text as given; when image restoration changed the drawing
+// on purpose, it is the restored state. The sanitized original as the engine writes it
+// is compared with the input too (serializer / sanitizer fidelity), so a writer bug is
+// never hidden by rendering both sides through the same writer.
+async function prepareOracle(ctx, restored, origState) {
+  const { doc, S } = ctx;
+  const browser = await getBrowser();
+  if (!browser) return { oracle: null, status: await oracleStatus(), fidelity: null };
+  const rv = renderViewFor(doc, S.raster || 700);
+  const written = restored ? exportSVG(doc, origState, { pretty: false }) : exportSVG(doc, origState, { exact: true, pretty: false });
+  const W = await browser.render(written, rv.cssW, rv.cssH);
+  let fidelity = null;
+  if (!restored && doc.sourceText != null) {
+    try {
+      const raw = await browser.render(doc.sourceText, rv.cssW, rv.cssH);
+      const c = compare(raw.img, W.img, rv.view, { radius: 1 });
+      fidelity = { ...stat(c), ok: c.solid === 0 && c.visibleShare === 0, sanitized: doc.removed.length };
+    } catch (err) { fidelity = { ok: false, error: String(err.message || err), sanitized: doc.removed.length }; }
+  }
+  return { oracle: { browser, ref: W.img, rv }, status: { available: true, exe: browser.exe, reason: null }, fidelity };
+}
+
+// opts: export options. o.validation: STRICT (default) or FALLBACK; o.browser = false
+// disables the oracle (it then counts as unavailable).
+export async function finalizeOutput(ctx, opts = {}, { browser = true, validation = STRICT, maxRounds = 10 } = {}) {
   const { doc } = ctx;
+  if (validation !== STRICT && validation !== FALLBACK) throw new Error(`unknown validation mode "${validation}"`);
   // the reference: the original, or the drawing corrected to the source image (an intended change)
   const ri = ctx.history.findIndex((h) => h.name === 'Restored');
   const origState = ri > 0 ? ctx.history[ri].state.map((s) => ({ ...s })) : doc.elements.map((e) => ({ subpaths: e.orig, removed: false, digits: undefined, flat: null, ctm: e.origCtm || e.ctm }));
-  const origText = exportSVG(doc, origState, opts);
+  const prep = browser ? await prepareOracle(ctx, ri > 0, origState) : { oracle: null, status: { available: false, exe: null, reason: 'browser validation disabled (--no-browser)' }, fidelity: null };
+  const { oracle, fidelity } = prep;
+  const common = { mode: validation, browserStatus: prep.status, fidelity };
   let state = ctx.history[ctx.history.length - 1].state.map((s) => ({ ...s }));
   const rolledBack = [], rounds = [];
   // unit "idx" returns the element (and its merge partners); "idx:sub" one contour
@@ -155,10 +199,43 @@ export async function finalizeOutput(ctx, opts = {}, { browser = true, maxRounds
       else if (list.includes(a)) rollback(String(m));
     }
   };
+  // the original, when nothing else can be proven (its own checks are reported too)
+  const keepOriginal = async (reason) => {
+    let res = await checkState(ctx, origState, opts, oracle);
+    // the export options themselves (restructuring, minified numbers of changed elements)
+    // must not change the original either: when they do, the original is written as is
+    if (!res.ok) { const r2 = await checkState(ctx, origState, { exact: true, pretty: opts.pretty ?? !opts.minify }, oracle); if (r2.ok || !res.internalOk) res = r2; }
+    // a writer that cannot reproduce the input (fidelity failed with nothing sanitized
+    // away): the input text itself is the faithful original
+    const raw = fidelity && !fidelity.ok && !fidelity.sanitized && doc.sourceText != null;
+    return { ...common, ok: false, kept: 'original', text: raw ? doc.sourceText : res.text, state: origState, rolledBack, rounds, integrity: raw ? integrity(doc.sourceText) : res.integrity, internal: res.internal, browser: res.browser, browserVerified: false, level: 'original-kept', reason };
+  };
+  // The input and the engine's copy of it differ in the browser. With nothing removed
+  // on input, that is a writer bug: nothing written by the engine can be trusted, the
+  // input is kept. When unsafe content was removed (an external <image> shows Chrome's
+  // broken-image box, for example) the difference is the sanitization itself: the
+  // sanitized original is the reference, and the report says so.
+  if (fidelity && !fidelity.ok) {
+    if (fidelity.error || !fidelity.sanitized) {
+      const why = fidelity.error ? `the browser could not draw the input (${fidelity.error})` : `the original as written by the engine does not look like the input in the browser (visible ${(fidelity.visible * 100).toFixed(3)}%, ${fidelity.solid} spot px)`;
+      return keepOriginal(`fidelity: ${why}`);
+    }
+    fidelity.attributedTo = `sanitization (${fidelity.sanitized} unsafe item(s) removed on input): the sanitized original is the reference`;
+  }
+  if (validation === STRICT && !oracle) {
+    // STRICT without the source of truth: report what the internal renderer sees, accept nothing
+    const res = await checkState(ctx, state, opts, null);
+    rounds.push({ ok: false, failures: res.failures, internal: res.internal, browser: null });
+    const out = await keepOriginal(`STRICT validation needs the browser oracle, which is unavailable (${prep.status.reason}); the processed result was not accepted. FALLBACK mode accepts an internal-only result, reported as not browser-verified`);
+    return { ...out, processedInternal: res.internal, processedInternalOk: res.internalOk };
+  }
   for (let r = 0; r < maxRounds; r++) {
-    const res = await checkState(ctx, state, opts, browser, origText);
+    const res = await checkState(ctx, state, opts, oracle);
     rounds.push({ ok: res.ok, failures: res.failures, internal: res.internal, browser: res.browser });
-    if (res.ok) return { ok: true, kept: 'processed', text: res.text, state, rolledBack, rounds, integrity: res.integrity, internal: res.internal, browser: res.browser };
+    if (res.ok) {
+      const browserVerified = !!(res.browser && res.browser.ok);
+      return { ...common, ok: true, kept: 'processed', text: res.text, state, rolledBack, rounds, integrity: res.integrity, internal: res.internal, browser: res.browser, browserVerified, level: browserVerified ? 'browser-verified' : 'internal-only' };
+    }
     // the main contributors first: every unit explaining at least a fifth of what the top one explains
     const ranked = offenders(ctx, state, res.mask, origState).filter(([u]) => !rolledBack.includes(u));
     const off = new Set([...[...res.bad].map(String), ...ranked.filter(([, n]) => n >= 0.2 * ranked[0][1]).map(([u]) => u)]);
@@ -168,6 +245,5 @@ export async function finalizeOutput(ctx, opts = {}, { browser = true, maxRounds
     for (const i of fresh) rollback(i);
   }
   // not provable: KEEP ORIGINAL
-  const res = await checkState(ctx, origState, opts, browser, origText);
-  return { ok: false, kept: 'original', text: origText, state: origState, rolledBack, rounds, integrity: res.integrity, internal: res.internal, browser: res.browser, reason: rounds.at(-1).failures.map((f) => `${f.check}: ${f.detail}`).join('; ') };
+  return keepOriginal(rounds.at(-1).failures.map((f) => `${f.check}: ${f.detail}`).join('; '));
 }

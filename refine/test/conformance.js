@@ -43,7 +43,8 @@ export async function conformance(files, { pngDir = null, side = 400 } = {}) {
     const a = Float32Array.from(ref), b = Float32Array.from(mine);
     for (let p = 0; p < skip.length; p++) if (skip[p]) for (let c = 0; c < 3; c++) { a[p * 3 + c] = 255; b[p * 3 + c] = 255; }
     const c = compare(a, b, view, { radius: 1 });
-    const name = f.pathname ? f.pathname.split('/').pop() : String(f);
+    // defect fixtures are all called bad.svg / expected.svg: keep their folder in the name
+    const parts = (f.pathname || String(f)).split('/'), name = /^(bad|expected)\.svg$/.test(parts.at(-1)) ? parts.slice(-2).join('/') : parts.at(-1);
     const row = { name, visible: c.visibleShare, pixel: c.pixelShare, mean: c.mean, solid: c.solid, excluded: skipped / skip.length, pass: c.visibleShare <= LIMITS.visible && c.mean <= LIMITS.meanDE && c.solid <= LIMITS.solid };
     rows.push(row);
     if (pngDir) {

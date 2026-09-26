@@ -24,7 +24,10 @@ export function loadSVG(text) {
   if (text.length > 25 * 1024 * 1024) throw new Error('File is larger than 25 MB');
   const { root, removed: xmlRemoved, elements } = parseXML(text);
   const removed = [...xmlRemoved, ...sanitize(root)];
-  return buildModel(root, { removed, elementCount: elements, bytes: text.length });
+  const doc = buildModel(root, { removed, elementCount: elements, bytes: text.length });
+  // the input exactly as given: the browser reference for the final validation
+  doc.sourceText = text;
+  return doc;
 }
 
 export function buildModel(root, info = {}) {

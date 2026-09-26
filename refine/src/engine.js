@@ -7,13 +7,17 @@ import { elementBox } from './model.js';
 import { apply } from './matrix.js';
 import { topology, sampleNative, polyOf, selfIntersections } from './features.js';
 import { touchesUncertain, UNSUPPORTED } from './capability.js';
+import { contourEvidence, geometryVerdict, margin } from './evidence.js';
+import { classify, noteChange } from './changes.js';
 import { renderViewFor } from './viewport.js';
+import { ByteLRU } from './lru.js';
+import { probe } from './memprobe.js';
 
 export const MODES = {
-  safe:         { simplify: 0.3, curve: 0.35, maxDev: 0.7, cornerAngle: 20, shapeSensitivity: 0.97, micro: 0.6, precision: 'adaptive', symmetry: false, topologyRepair: true, strokePreservation: true,  flattenTransforms: false, removeHidden: true, mergePaths: false, minConfidence: 0.95, regionMax: 0.005, maxSolid: 0, globalMax: 0.0005, hiddenFactor: 2 },
-  balanced:     { simplify: 0.5, curve: 0.6,  maxDev: 1.1, cornerAngle: 25, shapeSensitivity: 0.94, micro: 1.0, precision: 'adaptive', symmetry: false, topologyRepair: true, strokePreservation: true,  flattenTransforms: false, removeHidden: true, mergePaths: false, minConfidence: 0.9,  regionMax: 0.01,  maxSolid: 0, globalMax: 0.001,  hiddenFactor: 3 },
-  professional: { simplify: 0.8, curve: 0.9,  maxDev: 1.6, cornerAngle: 30, shapeSensitivity: 0.9,  micro: 1.5, precision: 'adaptive', symmetry: true,  topologyRepair: true, strokePreservation: false, flattenTransforms: false, removeHidden: true, mergePaths: true,  minConfidence: 0.85, regionMax: 0.015, maxSolid: 2, globalMax: 0.002,  hiddenFactor: 4 },
-  aggressive:   { simplify: 1.2, curve: 1.4,  maxDev: 2.4, cornerAngle: 35, shapeSensitivity: 0.86, micro: 2.2, precision: 'adaptive', symmetry: true,  topologyRepair: true, strokePreservation: false, flattenTransforms: false, removeHidden: true, mergePaths: true,  minConfidence: 0.8,  regionMax: 0.025, maxSolid: 4, globalMax: 0.0035, hiddenFactor: 5 },
+  safe:         { simplify: 0.3, curve: 0.35, maxDev: 0.7, cornerAngle: 20, micro: 0.6, precision: 'adaptive', symmetry: false, topologyRepair: true, strokePreservation: true,  flattenTransforms: false, removeHidden: true, mergePaths: false, maxAreaError: 0.004, shapeMaxDev: 0.008, shapeSystematic: 0.004, shapeArea: 0.006, shapePerimeter: 0.006, regionMax: 0.005, maxSolid: 0, globalMax: 0.0005, hiddenFactor: 2 },
+  balanced:     { simplify: 0.5, curve: 0.6,  maxDev: 1.1, cornerAngle: 25, micro: 1.0, precision: 'adaptive', symmetry: false, topologyRepair: true, strokePreservation: true,  flattenTransforms: false, removeHidden: true, mergePaths: false, maxAreaError: 0.008, shapeMaxDev: 0.012, shapeSystematic: 0.006, shapeArea: 0.01,  shapePerimeter: 0.01,  regionMax: 0.01,  maxSolid: 0, globalMax: 0.001,  hiddenFactor: 3 },
+  professional: { simplify: 0.8, curve: 0.9,  maxDev: 1.6, cornerAngle: 30, micro: 1.5, precision: 'adaptive', symmetry: true,  topologyRepair: true, strokePreservation: false, flattenTransforms: false, removeHidden: true, mergePaths: true,  maxAreaError: 0.015, shapeMaxDev: 0.02,  shapeSystematic: 0.008, shapeArea: 0.015, shapePerimeter: 0.015, regionMax: 0.015, maxSolid: 2, globalMax: 0.002,  hiddenFactor: 4 },
+  aggressive:   { simplify: 1.2, curve: 1.4,  maxDev: 2.4, cornerAngle: 35, micro: 2.2, precision: 'adaptive', symmetry: true,  topologyRepair: true, strokePreservation: false, flattenTransforms: false, removeHidden: true, mergePaths: true,  maxAreaError: 0.025, shapeMaxDev: 0.03,  shapeSystematic: 0.012, shapeArea: 0.025, shapePerimeter: 0.025, regionMax: 0.025, maxSolid: 4, globalMax: 0.0035, hiddenFactor: 5 },
 };
 export const settingsFor = (mode, over = {}) => ({ mode, ...MODES[mode || 'balanced'], ...over });
 
@@ -25,7 +29,7 @@ export function createContext(doc, S, src = null) {
   const origImg = render(doc, view, { orig: true });
   const ctx = {
     doc, S, u, view, origImg, origLab: labImage(origImg, view.W * view.H), src,
-    log: [], counts: {}, removedNodes: {}, rejectedCount: 0, acceptedCount: 0, history: [], info: [], crops: new Map(), t0: Date.now(),
+    log: [], counts: {}, removedNodes: {}, rejectedCount: 0, acceptedCount: 0, history: [], info: [], crops: new ByteLRU(S.cacheBytes), t0: Date.now(),
   };
   refreshOcclusion(ctx);
   return ctx;
@@ -35,14 +39,15 @@ export function createContext(doc, S, src = null) {
 export function resetDoc(doc) {
   for (const e of doc.elements) {
     if (!e.origCtm) { e.origCtm = e.ctm; e.origScale = e.scale; e.origStrokeWidth = e.strokeWidth; }
-    e.subpaths = e.orig || []; e.removed = false; e.base = null; e.baseCtm = null; e.ctm = e.origCtm; e.scale = e.origScale; e.strokeWidth = e.origStrokeWidth; e.flat = null; e.digits = undefined;
+    e.subpaths = e.orig || []; e.removed = false; e.base = null; e.baseCtm = null; e.ctm = e.origCtm; e.scale = e.origScale; e.strokeWidth = e.origStrokeWidth; e.flat = null; e.digits = undefined; e.refSubs = null;
   }
 }
 
 // ---- occlusion: index of the top-most opaque element at each pixel.
 // Only elements the renderer draws exactly can hide anything: a filter, pattern, text
 // or image is treated as transparent, so nothing under it is ever judged hidden.
-const occluder = (e) => (e.removed || (e.support && e.support.level === UNSUPPORTED) ? { ...e, render: false } : e);
+export const occluderOf = (e) => (e.removed || (e.support && e.support.level === UNSUPPORTED) ? { ...e, render: false } : e);
+const occluder = occluderOf;
 export function refreshOcclusion(ctx) {
   const { doc, view } = ctx, N = view.W * view.H, top = new Int32Array(N).fill(-1);
   const boxes = alphaBoxes({ ...doc, elements: doc.elements.map(occluder) }, view);
@@ -125,7 +130,6 @@ export function regionCheck(ctx, e, cand, focus) {
   if (!ref) {
     const img = render(doc, crop, { orig: true, box: (x) => origBox(x) });
     ref = { img, lab: labImage(img, crop.W * crop.H) };
-    if (ctx.crops.size > 400) ctx.crops.clear();
     ctx.crops.set(key, ref);
   }
   const cur = (x) => (x.removed ? null : x.subpaths);
@@ -134,14 +138,17 @@ export function regionCheck(ctx, e, cand, focus) {
   // edges may move by the mode's allowed deviation (in crop pixels), never more
   const radius = Math.max(1, Math.min(4, Math.round(S.maxDev * u * crop.k)));
   const rc = compare(ref.img, candImg, crop, { labA: ref.lab, radius }), rcur = compare(ref.img, curImg, crop, { labA: ref.lab, radius });
+  probe(ctx, 'region check');
   // object area in this region (its own coverage), so errors are relative to the object
   let area = 0;
   for (const L of elementLayers({ ...e, subpaths: e.subpaths.length ? e.subpaths : e.orig }, doc, crop)) for (const v of L.box.data) area += v;
   area = Math.max(area, 40 * crop.k * crop.k * u * u, 30);
   const share = rc.visiblePixels / area, curShare = rcur.visiblePixels / area;
-  const within = share <= S.regionMax && rc.solid <= S.maxSolid;
-  const notWorse = rc.visiblePixels <= rcur.visiblePixels && rc.solid <= rcur.solid;
-  return { ok: within || notWorse, share, curShare, solid: rc.solid, mean: rc.mean, badPixels: rc.visiblePixels, strictShare: rc.badPixels / area, zoom: crop.k / view.k };
+  // the same change at the scale of the whole artwork (the region is rendered at `zoom`)
+  const zoom = crop.k / view.k, global = rc.visiblePixels / (zoom * zoom) / (view.W * view.H), curGlobal = rcur.visiblePixels / (zoom * zoom) / (view.W * view.H);
+  const within = share <= S.regionMax && rc.solid <= S.maxSolid && global <= S.globalMax;
+  const notWorse = rc.visiblePixels <= rcur.visiblePixels && rc.solid <= rcur.solid && global <= Math.max(S.globalMax, curGlobal);
+  return { ok: within || notWorse, share, curShare, global, solid: rc.solid, mean: rc.mean, badPixels: rc.visiblePixels, strictPixels: rc.badPixels, strictShare: rc.badPixels / area, zoom };
 }
 
 // ---- geometric checks between the current and the candidate subpath (1:1)
@@ -180,7 +187,7 @@ function hausdorffAware(A, B, hidden, maxDev, factor) {
 // ---- logging
 const MAX_LOG = 4000;
 export function record(ctx, entry) {
-  if (entry.accepted) { ctx.acceptedCount++; if (entry.nodes) ctx.removedNodes[entry.op] = (ctx.removedNodes[entry.op] || 0) + entry.nodes[0] - entry.nodes[1]; }
+  if (entry.accepted) { ctx.acceptedCount++; if (entry.nodes) ctx.removedNodes[entry.op] = (ctx.removedNodes[entry.op] || 0) + entry.nodes[0] - entry.nodes[1]; if (entry.el != null) noteChange(ctx, entry); }
   else if (entry.accepted === false) ctx.rejectedCount++;
   const k = `${entry.op}|${entry.accepted ? 'accepted' : 'rejected'}`;
   ctx.counts[k] = (ctx.counts[k] || 0) + 1;
@@ -206,43 +213,80 @@ export function featureSafety(ctx, e, cand) {
 }
 
 // Candidate system: candidates are tried simplest first (fewest nodes); the first that
-// passes every constraint is applied. Each candidate carries its own confidence.
-// cands: [{ subpaths, confidence, label, geom: [{ i, cur, cand, maxDev?, hidden? }] | null, focus, topologyChange }]
+// passes every constraint is applied. The decision is made on measured evidence only:
+// feature support, topology, geometric distance to the current contour and to the
+// reference contour (so steps cannot add up), area change, and the local and global
+// visual difference. A hand-written number is never a gate.
+// cands: [{ subpaths, label, cls, geom: [{ cur, cand, maxDev?, hidden? }] | null, focus,
+//           topologyChange, strict?, visual? }]
+//   strict: the render must not change at all (certainly hidden geometry)
+//   visual: 'tiny' judges a removal by its absolute size (a speck is its own object)
 export function attempt(ctx, pass, op, e, cands, extra = {}) {
   const S = ctx.S;
   const now = nodesOf(e.subpaths);
   cands = cands.filter(Boolean).filter((c) => c.allowMore || nodesOf(c.subpaths) <= now).sort((a, b) => nodesOf(a.subpaths) - nodesOf(b.subpaths));
   for (const c of cands) {
-    const base = { pass, op, el: e.idx, id: e.id || null, sub: extra.sub ?? null, label: c.label || op, confidence: +c.confidence.toFixed(3), nodes: [nodesOf(e.subpaths), nodesOf(c.subpaths)] };
+    const base = { pass, op, el: e.idx, id: e.id || null, sub: extra.sub ?? null, label: c.label || op, cls: c.cls || classify(op), nodes: [nodesOf(e.subpaths), nodesOf(c.subpaths)], ...(c.supersedes ? { supersedes: true } : {}) };
     // feature safety: a protected element is never modified, and no change may touch a
     // region the renderer cannot draw exactly (the validation there would be blind)
     const unsafe = featureSafety(ctx, e, c.subpaths);
-    if (unsafe) { record(ctx, { ...base, accepted: false, reason: unsafe }); return null; }
-    if (c.confidence < S.minConfidence) { record(ctx, { ...base, accepted: false, reason: `confidence ${(c.confidence * 100).toFixed(0)}% is below ${(S.minConfidence * 100).toFixed(0)}%` }); continue; }
+    if (unsafe) { record(ctx, { ...base, accepted: false, reason: unsafe, evidence: { featureSupport: e.support ? e.support.level : null } }); return null; }
+    const evidence = { ...(c.evidence || {}), featureSupport: e.support ? e.support.level : 'SUPPORTED', topologyPreserved: true };
     // topology
     if (!c.topologyChange) {
       const t0 = topology(e.subpaths, e.rule, ctx.u / (e.scale || 1)), t1 = topology(c.subpaths, e.rule, ctx.u / (e.scale || 1));
-      if (t0.signature !== t1.signature) { record(ctx, { ...base, accepted: false, reason: 'topology would change (contours / holes / nesting)' }); continue; }
-    }
+      if (t0.signature !== t1.signature) { record(ctx, { ...base, accepted: false, reason: 'topology would change (contours / holes / nesting)', evidence: { ...evidence, topologyPreserved: false } }); continue; }
+    } else evidence.topologyPreserved = false;
     // gradient mapped to the object's box: the box must not move
     if ((e.fill.kind === 'gradient' && e.fill.units !== 'userSpaceOnUse') || (e.stroke.kind === 'gradient' && e.stroke.units !== 'userSpaceOnUse')) {
       const a = boxOf(e, e.subpaths), b = c.subpaths.length ? boxOf(e, c.subpaths) : a;
-      if (Math.max(...a.map((v, i) => Math.abs(v - b[i]))) > 0.1 * ctx.u) { record(ctx, { ...base, accepted: false, reason: 'would move the gradient (object bounding box changes)' }); continue; }
+      if (Math.max(...a.map((v, i) => Math.abs(v - b[i]))) > 0.1 * ctx.u) { record(ctx, { ...base, accepted: false, reason: 'would move the gradient (object bounding box changes)', evidence }); continue; }
     }
-    let gdev = 0, bad = null;
-    for (const g of c.geom || []) {
-      const r = geometryCheck(ctx, e, g.cur, g.cand, g);
-      if (!r.ok) { bad = r.reason; break; }
-      gdev = Math.max(gdev, r.dev || 0);
-    }
-    if (bad) { record(ctx, { ...base, accepted: false, reason: bad }); continue; }
+    const bad = geometryEvidence(ctx, e, c, evidence);
+    if (bad) { record(ctx, { ...base, accepted: false, reason: bad, evidence }); continue; }
     const v = regionCheck(ctx, e, c.subpaths, c.focus);
-    const metrics = { deviation: +(gdev * (e.scale || 1) / ctx.u / 10).toFixed(3), regionError: +(v.share * 100).toFixed(3), solid: v.solid, meanDE: +v.mean.toFixed(3) };
-    if (!v.ok) { record(ctx, { ...base, accepted: false, reason: `visual deviation ${(v.share * 100).toFixed(2)}% of the object${v.solid ? `, ${v.solid} px spot` : ''} exceeds tolerance`, metrics }); continue; }
+    Object.assign(evidence, { localVisualError: +v.share.toFixed(5), globalVisualError: +v.global.toFixed(6), solid: v.solid, meanDE: +v.mean.toFixed(3) });
+    let vbad = null;
+    if (c.strict) { if (v.strictPixels || v.mean) vbad = `the render changes (${v.strictPixels} px): not certainly hidden`; }
+    else if (c.visual === 'tiny') {
+      const px = v.badPixels / (v.zoom * v.zoom), lim = Math.max(4, (S.micro * ctx.u * ctx.view.k) ** 2);
+      if (px > lim || v.global > S.globalMax / 4) vbad = `removal changes ${px.toFixed(1)} px (limit ${lim.toFixed(1)} px)`;
+    } else if (!v.ok) vbad = `visual deviation ${(v.share * 100).toFixed(2)}% of the object${v.solid ? `, ${v.solid} px spot` : ''} exceeds tolerance`;
+    evidence.score = margin(evidence.geometry || null, S, { share: c.visual === 'tiny' || c.strict ? 0 : v.share, global: v.global });
+    if (vbad) { record(ctx, { ...base, accepted: false, reason: vbad, evidence }); continue; }
     e.subpaths = c.subpaths;
-    record(ctx, { ...base, accepted: true, reason: `visual deviation ${(v.share * 100).toFixed(2)}%`, metrics });
+    record(ctx, { ...base, accepted: true, reason: `visual deviation ${(v.share * 100).toFixed(2)}%`, evidence });
     return c;
   }
+  return null;
+}
+// Geometry evidence of a candidate (fills evidence.geometry). Every changed contour is
+// measured against the current contour (this step's own limit) and against the
+// reference contour, the geometry after structural cleanup (the whole budget of the
+// mode, so small steps cannot add up to a large drift). Returns the failed limit or null.
+function geometryEvidence(ctx, e, c, evidence) {
+  const S = ctx.S, ul = ctx.u / (e.scale || 1);
+  let worst = null;
+  for (const g of c.geom || []) {
+    const r = geometryCheck(ctx, e, g.cur, g.cand, g);
+    if (!r.ok) return r.reason;
+    const i = e.subpaths.indexOf(g.cur), ref = e.refSubs && e.refSubs.length === e.subpaths.length && i >= 0 ? e.refSubs[i] : null;
+    const budget = Math.max(S.maxDev, g.maxDev ?? S.maxDev);
+    let drift = r.dev;
+    if (ref && ref !== g.cur) {
+      const d = geometryCheck(ctx, e, ref, g.cand, { maxDev: budget, hidden: g.hidden });
+      if (!d.ok) return `${d.reason} (all steps together, from the original contour)`;
+      drift = d.dev;
+    }
+    // hausdorff: the (hidden-aware) distance just measured; corners are compared only
+    // where a decision depends on them (shape reconstruction)
+    const ev = contourEvidence(ref || g.cur, g.cand, ul, S.cornerAngle, { hausdorff: drift / ul, corners: false });
+    const hiddenPart = g.hidden && sampleNative(g.cand, 2 * ul).pts.some(g.hidden);
+    const why = geometryVerdict({ ...ev, hausdorff: 0 }, S, { maxDev: budget, area: !hiddenPart && !g.noArea });
+    if (why) return why;
+    if (!worst || ev.hausdorff > worst.hausdorff) worst = ev;
+  }
+  if (worst) evidence.geometry = Object.fromEntries(Object.entries(worst).map(([k, v]) => [k, typeof v === 'number' ? +v.toFixed(4) : v]));
   return null;
 }
 
@@ -261,6 +305,7 @@ export function globalCheck(ctx, structural = true) {
   const img = render(ctx.doc, ctx.view, { geom: (x) => (x.removed ? null : x.subpaths) });
   const radius = Math.max(1, Math.min(3, Math.round(ctx.S.maxDev * ctx.u * ctx.view.k)));
   const r = compare(ctx.origImg, img, ctx.view, { labA: ctx.origLab, structural, radius });
+  probe(ctx, 'global check');
   return { ...r, score: visualScore(r), img };
 }
 export { nodesOf, unionBox, origBox };

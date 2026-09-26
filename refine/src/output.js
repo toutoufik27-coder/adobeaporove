@@ -11,6 +11,7 @@ function cloneWithMap(el, map, parent = null) {
   return c;
 }
 const GEOM_ATTRS = { rect: ['x', 'y', 'width', 'height', 'rx', 'ry'], circle: ['cx', 'cy', 'r'], ellipse: ['cx', 'cy', 'rx', 'ry'], line: ['x1', 'y1', 'x2', 'y2'], polygon: ['points'], polyline: ['points'] };
+const LOSSLESS_DIGITS = 10;
 const EDITOR_NS = /^(inkscape|sodipodi|sketch|serif|figma|i|x|graph|a|dc|cc|rdf):/;
 
 export function exportSVG(doc, state, opts = {}) {
@@ -20,7 +21,9 @@ export function exportSVG(doc, state, opts = {}) {
     const st = state[e.idx], node = map.get(e.node);
     if (!node || exact || !e.editable && !st.flat) continue;
     if (st.removed) { if (node.parent) node.parent.children = node.parent.children.filter((c) => c !== node); continue; }
-    const digits = st.digits ?? 3;
+    // decimals validated in pass 10 (st.digits); a state that never went through that
+    // validation (an earlier history stage) is written without rounding
+    const digits = st.digits ?? LOSSLESS_DIGITS;
     const changed = st.subpaths !== e.orig || st.flat;
     const tag = localName(node.name);
     if (tag === 'path') {
@@ -44,7 +47,7 @@ export function exportSVG(doc, state, opts = {}) {
       }
     }
   }
-  if (!preserveStructure) cleanStructure(root);
+  if (!preserveStructure && restructureSafe(doc)) cleanStructure(root);
   const body = serialize(root, { pretty });
   return (pretty ? '' : '') + body;
 }
@@ -52,6 +55,14 @@ function toPath(node, tag, d) {
   for (const k of GEOM_ATTRS[tag] || []) delAttr(node, k);
   node.name = node.name.includes(':') ? node.name.replace(/:[^:]+$/, ':path') : 'path';
   setAttr(node, 'd', d);
+}
+// Unwrapping a group changes what a stylesheet rule can match (a `g { fill: red }` rule
+// styles the children of every <g>; descendant selectors count ancestors). Only when no
+// rule can see the difference.
+function restructureSafe(doc) {
+  const rules = doc.rules || [];
+  if (rules.unsupported && rules.unsupported.length) return false;
+  return !rules.some((r) => r.tag === 'g' || r.tag === 'metadata');
 }
 // editor metadata out, empty groups unwrapped, empty defs removed (ids are kept)
 function cleanStructure(root) {

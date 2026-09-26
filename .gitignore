@@ -1,9 +1,0 @@
-__pycache__/
-*.egg-info/
-.pytest_cache/
-.ruff_cache/
-.venv/
-build/
-dist/
-*-quality-guard/
-quality-guard-calibration/

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1100">
+  <title>أدوات الأيقونات</title>
+  <link rel="stylesheet" href="vectorizer/style.css?v=17">
+  <style>
+    .hub { max-width: 980px; margin: 40px auto; padding: 0 16px; }
+    .hub h1 { margin: 0 0 6px; }
+    .tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 24px; }
+    .tool { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; color: var(--text); text-decoration: none; box-shadow: var(--shadow); }
+    .tool:hover { border-color: var(--accent); }
+    .tool b { display: block; font-size: 18px; margin: 6px 0; }
+    .tool .n { color: var(--accent); font-weight: 700; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main class="hub">
+    <h1>أدوات الأيقونات</h1>
+    <p class="muted">من الفكرة إلى ملف SVG جاهز للبيع — كل المعالجة داخل جهازك.</p>
+    <div class="tools">
+      <a class="tool" href="prompts/"><span class="n">1</span><b>مولّد البرومبتات</b><span class="muted">ماذا أصنع الآن، وبرومبتات صارمة لـ Google Flow، والعناوين والكلمات المفتاحية.</span></a>
+      <a class="tool" href="vectorizer/"><span class="n">2</span><b>محوّل الفيكتور</b><span class="muted">الصورة إلى SVG نظيف، مع فصل كل أيقونة في ملف مستقل.</span></a>
+      <a class="tool" href="refine/"><span class="n">3</span><b>منظّف الفيكتور</b><span class="muted">إعادة بناء الهندسة، والمطابقة مع الصورة الأصلية، وتصحيح المعنى بذكاء محلي.</span></a>
+    </div>
+  </main>
+</body>
+</html>

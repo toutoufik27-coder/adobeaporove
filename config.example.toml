@@ -1,0 +1,44 @@
+# إعدادات Quality Guard. انسخ هذا الملف وعدّل ما تحتاجه فقط، ثم شغّل:
+#   qguard FOLDER --config my-config.toml
+# القيم أدناه هي القيم الافتراضية.
+
+[technical]
+# min_megapixels = 4.0
+# max_megapixels = 100.0
+# max_file_mb = 45.0
+# min_vector_megapixels = 15.0
+# png_margin_review = 0.1
+# png_min_content_area = 0.2
+# png_min_transparent = 0.02
+# jpeg_quality_review = 75
+# jpeg_quality_reject = 50
+
+[quality]
+# sharpness_review = 0.6
+# sharpness_reject = 0.47
+# coarse_sharpness_review = 0.55
+# coarse_sharpness_reject = 0.45
+# noise_review = 3.5
+# noise_reject = 7.0
+# highlight_clip_review = 0.2
+# shadow_clip_review = 0.3
+# tile_size = 256
+# max_tiles = 400
+
+[similarity]
+# near_duplicate_distance = 6
+# similar_distance = 10
+# max_similar = 3
+
+[metadata]
+# title_max = 200
+# title_recommended = 70
+# keywords_max = 49
+# keywords_min = 5
+# extra_blocklist = ""
+
+[vision]
+# model = "claude-opus-5"
+# max_side = 1568
+# workers = 4
+# effort = ""

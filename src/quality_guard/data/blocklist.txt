@@ -1,0 +1,295 @@
+# Words Adobe Stock rejects in titles, keywords and AI prompts. A match rejects the file, except
+# in [landmark_check], which only sends it to review.
+# Format: one entry per line under a [section]. Matching ignores case, accents, hyphens and apostrophes,
+# and only matches whole words. Words that are also ordinary nouns (apple, galaxy, jaguar, amazon,
+# windows, dove, shell, puma, corona, mustang...) are deliberately left out to avoid false alarms.
+# Add your own with [metadata] extra_blocklist in the config file.
+
+[brand]
+iphone
+ipad
+macbook
+imac
+airpods
+apple watch
+samsung
+huawei
+xiaomi
+google pixel
+microsoft
+xbox
+playstation
+nintendo
+sony
+canon
+nikon
+fujifilm
+leica
+gopro
+dji
+hasselblad
+porsche
+ferrari
+lamborghini
+maserati
+bugatti
+bmw
+mercedes
+mercedes-benz
+audi
+volkswagen
+tesla
+toyota
+honda
+nissan
+hyundai
+kia motors
+chevrolet
+cadillac
+land rover
+range rover
+rolls-royce
+bentley
+harley-davidson
+ducati
+yamaha
+coca-cola
+pepsi
+fanta
+red bull
+heineken
+budweiser
+nescafe
+nespresso
+starbucks
+mcdonalds
+burger king
+kfc
+subway restaurant
+nutella
+oreo
+nike
+adidas
+reebok
+under armour
+new balance
+gucci
+prada
+louis vuitton
+chanel
+dior
+versace
+burberry
+rolex
+omega watch
+cartier
+ray-ban
+levis
+ikea
+lego
+barbie
+hot wheels
+playmobil
+facebook
+instagram
+whatsapp
+tiktok
+youtube
+twitter
+snapchat
+linkedin
+netflix
+spotify
+amazon prime
+uber
+airbnb
+visa card
+mastercard
+paypal
+bitcoin logo
+
+[sports_org]
+fifa
+uefa
+nfl
+nba
+nhl
+mlb
+premier league
+champions league
+la liga
+olympics
+olympic games
+formula 1
+formula one
+world cup
+super bowl
+wimbledon
+
+[character]
+mickey mouse
+minnie mouse
+donald duck
+winnie the pooh
+spider-man
+spiderman
+batman
+superman
+wonder woman
+iron man
+captain america
+avengers
+harley quinn
+darth vader
+yoda
+star wars
+stormtrooper
+harry potter
+hogwarts
+pikachu
+pokemon
+super mario
+sonic the hedgehog
+shrek
+simpsons
+bart simpson
+homer simpson
+spongebob
+hello kitty
+scooby-doo
+tom and jerry
+bugs bunny
+looney tunes
+peppa pig
+paw patrol
+toy story
+buzz lightyear
+disney
+disney princess
+pixar
+marvel comics
+marvel studios
+legend of zelda
+dc comics
+barbie doll
+teenage mutant ninja turtles
+power rangers
+godzilla
+king kong
+naruto
+goku
+dragon ball
+sailor moon
+totoro
+studio ghibli
+minecraft
+fortnite
+roblox
+lord of the rings
+gandalf
+game of thrones
+
+[artist]
+van gogh
+vincent van gogh
+picasso
+pablo picasso
+monet
+claude monet
+salvador dali
+frida kahlo
+klimt
+gustav klimt
+andy warhol
+warhol
+banksy
+basquiat
+keith haring
+roy lichtenstein
+hokusai
+alphonse mucha
+leonardo da vinci
+michelangelo
+caravaggio
+rembrandt
+vermeer
+edvard munch
+magritte
+kandinsky
+mondrian
+jackson pollock
+edward hopper
+norman rockwell
+greg rutkowski
+artgerm
+wlop
+loish
+beeple
+james jean
+simon stalenhag
+zdzislaw beksinski
+beksinski
+h.r. giger
+giger
+hayao miyazaki
+makoto shinkai
+tim burton
+wes anderson
+annie leibovitz
+yayoi kusama
+takashi murakami
+thomas kinkade
+bob ross
+
+[person]
+elon musk
+donald trump
+joe biden
+barack obama
+taylor swift
+beyonce
+kim kardashian
+cristiano ronaldo
+lionel messi
+queen elizabeth
+king charles
+putin
+vladimir putin
+zelensky
+mark zuckerberg
+bill gates
+jeff bezos
+steve jobs
+albert einstein
+marilyn monroe
+michael jackson
+princess diana
+pope francis
+
+[landmark]
+sydney opera house
+taipei 101
+casa mila
+la pedrera
+cathedral of brasilia
+brasilia cathedral
+chillon castle
+eltz castle
+buckingham palace
+windsor castle
+
+# Often restricted; check Adobe's list before submitting.
+[landmark_check]
+atomium
+hollywood sign
+eiffel tower at night
+louvre pyramid
+flatiron building
+chrysler building
+empire state building
+transamerica pyramid
+lone cypress
+
+# Phrases that contain a blocked word but are ordinary photography or art terms.
+[allow]
+rembrandt lighting

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import array
 import math
-import wave
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,20 +58,61 @@ def parse_tsv(text: str) -> list[Cue]:
     return cues
 
 
+def wav_info(path: Path) -> tuple[int, int, int, bytes]:
+    """(sample rate, bytes per sample, channels, PCM bytes) of an integer-PCM wav, the plain
+    header and WAVE_FORMAT_EXTENSIBLE alike: ffmpeg writes 24-bit files with the latter,
+    which Python's wave module reads only from 3.12 on."""
+    data = Path(path).read_bytes()
+    if data[:4] not in (b"RIFF", b"RF64") or data[8:12] != b"WAVE":
+        raise ValueError(f"{path}: not a wav file")
+    pos, fmt, pcm = 12, None, None
+    while pos + 8 <= len(data):
+        cid, size = data[pos:pos + 4], int.from_bytes(data[pos + 4:pos + 8], "little")
+        body = data[pos + 8:pos + 8 + size]
+        if cid == b"fmt ":
+            tag, ch, sr = struct.unpack_from("<HHI", body)
+            bits = struct.unpack_from("<H", body, 14)[0]
+            if tag == 0xFFFE and len(body) >= 26:  # extensible: the real format is the SubFormat GUID
+                tag = struct.unpack_from("<H", body, 24)[0]
+            fmt = (tag, ch, sr, bits)
+        elif cid == b"data":
+            pcm = data[pos + 8:] if size in (0, 0xFFFFFFFF) or pos + 8 + size > len(data) else body
+            break
+        pos += 8 + size + (size & 1)
+    if not fmt or pcm is None:
+        raise ValueError(f"{path}: no fmt or data chunk")
+    tag, ch, sr, bits = fmt
+    if tag != 1:
+        raise ValueError(f"{path}: not integer PCM (format {tag})")
+    return sr, bits // 8, ch, pcm
+
+
+def wav_seconds(path: Path) -> float:
+    sr, width, ch, pcm = wav_info(path)
+    return len(pcm) / (width * ch * sr)
+
+
+def read_pcm(path: Path) -> tuple[list[float], int]:
+    """Mono samples in -1..1 of a 16, 24 or 32-bit PCM wav (first channel), and the rate."""
+    sr, width, ch, raw = wav_info(path)
+    if width == 2:
+        data = array.array("h", raw[: len(raw) - len(raw) % 2])
+        return [v / 32768 for v in data[::ch]], sr
+    if width not in (3, 4):
+        raise ValueError(f"{path}: {8 * width}-bit PCM is not supported")
+    full = float(1 << (8 * width - 1))
+    step = width * ch
+    return [int.from_bytes(raw[i:i + width], "little", signed=True) / full for i in range(0, len(raw) - step + 1, step)], sr
+
+
 def rms_per_frame(path: Path, fps: int) -> list[float]:
-    """Loudness (RMS, 0..1) of a 16-bit PCM wav for every video frame."""
-    with wave.open(str(path), "rb") as w:
-        if w.getsampwidth() != 2:
-            raise ValueError(f"{path}: 16-bit PCM expected")
-        ch, sr = w.getnchannels(), w.getframerate()
-        data = array.array("h", w.readframes(w.getnframes()))
-    if ch > 1:
-        data = array.array("h", data[::ch])
+    """Loudness (RMS, 0..1) of a PCM wav for every video frame (16, 24 or 32-bit)."""
+    data, sr = read_pcm(path)
     step = sr / fps
     out = []
     for k in range(math.ceil(len(data) / step)):
         chunk = data[round(k * step):round((k + 1) * step)]
-        out.append(math.sqrt(sum(s * s for s in chunk) / len(chunk)) / 32768 if chunk else 0.0)
+        out.append(math.sqrt(sum(s * s for s in chunk) / len(chunk)) if chunk else 0.0)
     return out
 
 

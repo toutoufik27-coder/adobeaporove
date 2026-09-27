@@ -8,9 +8,10 @@ saved: it is the proof of where the voice came from, and it remakes the voice.
 Level 1, speech: Chatterbox (English) and Chatterbox Multilingual (the dubs) speak each
 line with the character's reference, one line at a time so the voice does not drift.
 The line's feeling picks an emotional reference when one exists (kiko_happy.wav).
-Every line is checked: Resemblyzer similarity to the reference >= 0.75, and Whisper
-must hear the written words. A line that fails is made again with the next seed, up
-to three times, then it is flagged for a person.
+Every line is made in three takes and the best one kept (voice_quality): Resemblyzer
+similarity to the reference >= 0.75, Whisper must hear the written words, and no
+measurable defect (clipping, a gap, a cut-off end, skipped words). If no take passes, three
+more; then it is flagged for a person. The kept take goes through the studio chain.
 
 Level 2, RVC: advised when more than 15 % of the lines fail the similarity check.
 
@@ -19,17 +20,19 @@ decisions are plain code and are tested with fakes."""
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol
 
 from .bible.models import Character
 from .episode import Episode
+from .lipsync import wav_seconds
 from .text import word_error_rate
+from .voice_quality import ROUNDS, TAKES, defects, finish_line, match_names, pitch_filter, take_score
 
 MIN_SIMILARITY = 0.75
 MAX_WER = 0.15
-ATTEMPTS = 3
 RVC_FAIL_RATE = 0.15
 MAX_PITCH = 5
 DESIGN_LINE = "Wow! What is that? Let's find out! Ha ha, come on, follow me!"
@@ -42,9 +45,11 @@ def pitch_ratio(semitones: float) -> float:
 
 
 def pitch_argv(src: Path, dst: Path, semitones: float) -> list[str]:
-    """The reference: pitched (formants move too, hence the +5 cap) and levelled."""
+    """The design candidate pitched in two stages (voice_quality.pitch_filter: the formants
+    follow only part of the shift, so it sounds like a child and not a chipmunk), levelled."""
+    pitch_ratio(semitones)  # the +5 cap
     return ["ffmpeg", "-hide_banner", "-y", "-i", str(src), "-af",
-            f"rubberband=pitch={pitch_ratio(semitones):.4f},loudnorm=I=-16:TP=-1.5", "-ar", "24000", str(dst)]
+            f"{pitch_filter(semitones)},loudnorm=I=-16:TP=-1.5", "-ar", "24000", "-c:a", "pcm_s16le", str(dst)]
 
 
 @dataclass(frozen=True)
@@ -72,7 +77,25 @@ def ref_for(root: Path, ch: Character, lang: str, emotion: str = "neutral") -> P
 
 class Synth(Protocol):
     def __call__(self, text: str, lang: str, ref: Path, exaggeration: float, cfg_weight: float, seed: int, out: Path) -> float:
-        """Writes 16-bit PCM wav to out, returns its length in seconds."""
+        """Writes a PCM wav to out, returns its length in seconds."""
+
+
+@dataclass(frozen=True)
+class Take:
+    path: Path
+    seed: int
+    seconds: float
+    similarity: float
+    wer: float
+    defects: tuple[str, ...]
+
+    @property
+    def passed(self) -> bool:
+        return self.similarity >= MIN_SIMILARITY and self.wer <= MAX_WER and not self.defects
+
+    @property
+    def score(self) -> float:
+        return take_score(self.similarity, self.wer, list(self.defects))
 
 
 @dataclass(frozen=True)
@@ -82,36 +105,57 @@ class LineVoice:
     seconds: float
     similarity: float
     wer: float
-    attempts: int
+    takes: int
     passed: bool
+    defects: tuple[str, ...] = ()
+    seed: int = 0
 
 
 def speak_line(line_id: str, text: str, lang: str, ch: Character, ref: Path, main_ref: Path, out: Path,
-               synth: Synth, similarity, transcribe, seed: int) -> LineVoice:
-    best = None
-    for attempt in range(ATTEMPTS):
-        seconds = synth(text, lang, ref, ch.voice.exaggeration, ch.voice.cfg_weight, seed + attempt, out)
-        sim = similarity(main_ref, out)
-        wer = word_error_rate(text, transcribe(out, lang))
-        ok = sim >= MIN_SIMILARITY and wer <= MAX_WER
-        best = LineVoice(line_id, str(out), round(seconds, 3), round(sim, 3), round(wer, 3), attempt + 1, ok)
-        if ok:
+               synth: Synth, similarity, transcribe, seed: int, names: list[str] = (),
+               check=defects, finish=finish_line, enhance=None) -> LineVoice:
+    """Best of three takes (a second round of three if none passes), then the studio chain.
+    check(path, text, lang, pace) lists measurable defects; enhance(src, dst) is optional;
+    finish(src, dst) is the chain (None keeps the take as it is)."""
+    takes: list[Take] = []
+    work = out.parent / "takes"
+    for rnd in range(ROUNDS):
+        for k in range(TAKES):
+            s = seed + rnd * TAKES + k
+            raw = work / f"{out.stem}_t{s}.wav"
+            secs = synth(text, lang, ref, ch.voice.exaggeration, ch.voice.cfg_weight, s, raw)
+            heard = match_names(transcribe(raw, lang), list(names))
+            takes.append(Take(raw, s, secs, round(similarity(main_ref, raw), 3),
+                              round(word_error_rate(text, heard), 3), tuple(check(raw, text, lang, ch.voice.pace))))
+        if any(t.passed for t in takes):
             break
-    return best
+    best = max(takes, key=lambda t: (t.passed, t.score))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    kept = enhance(best.path, work / f"{out.stem}_enhanced.wav") if enhance else best.path
+    if finish:
+        finish(kept, out)
+        seconds = wav_seconds(out)
+    else:
+        shutil.copy(kept, out)
+        seconds = best.seconds
+    return LineVoice(line_id, str(out), round(seconds, 3), best.similarity, best.wer, len(takes), best.passed,
+                     best.defects, best.seed)
 
 
 def voice_episode(root: Path, bible, ep: Episode, lang: str, out_dir: Path, synth: Synth, similarity, transcribe,
-                  log=print) -> dict:
+                  log=print, check=defects, finish=finish_line, enhance=None) -> dict:
     """Every line of one language. Returns the report; writes lengths.json for `studio plan`."""
+    names = [c.name for c in bible.characters.values()]
     results = []
     for line in ep.lines():
         ch = bible.characters[line.speaker]
         text = line.text if lang == ep.language else ep.translations[lang][line.id]
         seed = int(ch.id[3:]) * 1000  # a fixed seed per character
         r = speak_line(line.id, text, lang, ch, ref_for(root, ch, lang, line.emotion), ref_for(root, ch, lang),
-                       out_dir / f"{line.id}.wav", synth, similarity, transcribe, seed)
+                       out_dir / f"{line.id}.wav", synth, similarity, transcribe, seed, names, check, finish, enhance)
         if not r.passed:
-            log(f"FLAGGED {line.id} {ch.name}: similarity {r.similarity}, WER {r.wer} after {r.attempts} tries")
+            why = "; ".join(r.defects) or f"similarity {r.similarity}, WER {r.wer}"
+            log(f"FLAGGED {line.id} {ch.name}: {why} (best of {r.takes} takes)")
         results.append(r)
     failed = [r for r in results if r.similarity < MIN_SIMILARITY]
     report = {
@@ -184,6 +228,27 @@ class Whisper:
 
     def __call__(self, wav: Path, lang: str) -> str:
         return self.asr(str(wav), generate_kwargs={"language": lang, "task": "transcribe"})["text"]
+
+
+class Enhancer:
+    """Optional (`studio voice --enhance`): Resemble Enhance (MIT) on each kept take, before
+    the studio chain. Chatterbox speaks at 24 kHz, so nothing above 12 kHz exists; this
+    model rebuilds the top of the spectrum (44.1 kHz), the "air" a studio recording has.
+    On the finished lines, not on the references: Chatterbox reads its prompt at 24 kHz
+    anyway. Loaded from the folder the license guard installed; not run in the tests."""
+
+    def __init__(self, model_dir: Path, device: str = "cuda"):
+        self.dir, self.device = model_dir, device
+
+    def __call__(self, src: Path, dst: Path) -> Path:
+        import torchaudio
+        from resemble_enhance.enhancer.inference import enhance
+        dwav, sr = torchaudio.load(str(src))
+        wav, new_sr = enhance(dwav.mean(dim=0), sr, self.device, nfe=64, solver="midpoint", lambd=0.1, tau=0.5,
+                              run_dir=self.dir / "enhancer_stage2")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        torchaudio.save(str(dst), wav.unsqueeze(0).cpu(), new_sr, encoding="PCM_S", bits_per_sample=16)
+        return dst
 
 
 def design_candidates(ch: Character, out_dir: Path, model_path: str, n: int = 20, device: str = "cuda") -> list[Path]:

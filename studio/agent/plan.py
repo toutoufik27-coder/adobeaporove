@@ -45,7 +45,7 @@ def voice_tasks(bible: Bible, cfg: AgentConfig, cid: str) -> list[Task]:
         Task(f"{v}/pitch", cid, "voice.pitch", (f"{v}/design",)),
         Task(f"{v}/score", cid, "voice.score", (f"{v}/pitch",), gpu="whisper"),
         Task(f"{v}/pick", cid, "voice.pick", (f"{v}/score",), human=True),
-        Task(f"{v}/reference", cid, "voice.reference", (f"{v}/pick",), gpu="voice"),
+        Task(f"{v}/reference", cid, "voice.reference", (f"{v}/pick",), gpu="voice_check"),
         Task(f"{v}/emotions", cid, "voice.emotions", (f"{v}/reference",), gpu="voice"),
     ]
     refs = []

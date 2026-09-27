@@ -7,6 +7,7 @@ REF_SENTENCES_EN = [
     "Hello, friends! Today we are going to find out something new.",
     "Hmm, what is inside this little box? Let's look together!",
     "Ha ha! That tickles! Can we do it again, please?",
+    "Wow, look at all the colours! Which one do you like best?",
 ]
 
 EMOTION_LINES = {  # feeling -> (line, change to the character's exaggeration)

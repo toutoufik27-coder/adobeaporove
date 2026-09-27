@@ -8,12 +8,13 @@ import secrets
 import shutil
 import statistics
 import subprocess
-import wave
 from pathlib import Path
 
+from ..lipsync import wav_seconds as _wav_seconds
 from ..text import word_error_rate
 from ..voice import (DESIGN_LINE, MIN_SIMILARITY, RVC_FAIL_RATE, Chatterbox, Recipe, Resemblyzer, Whisper,
                      design_candidates, pitch_argv)
+from ..voice_quality import TAKES, defects, f0_median, match_names, take_score
 from .lines import EMOTION_LINES, REF_SENTENCES_EN, passage, validation_lines
 from .steps import AUTO, REVIEW, Ctx, NeedsAction, auto, review, step  # noqa: F401
 
@@ -36,21 +37,22 @@ def need_filter(name: str) -> None:
 
 
 def wav_seconds(path: Path) -> float:
-    with wave.open(str(path), "rb") as w:
-        return round(w.getnframes() / w.getframerate(), 3)
+    return round(_wav_seconds(path), 3)
 
 
 def reference_argv(parts: list[Path], out: Path, max_s: float = 15.0) -> list[str]:
-    """One clean reference from several clips: same rate, long pauses shortened to 0.25 s,
-    at most max_s seconds."""
+    """One clean reference from several clips: same rate, rumble and clicks removed, a light
+    denoise and de-essing (whatever is in the reference is cloned into every line), long
+    pauses shortened to 0.25 s, at most max_s seconds, levelled."""
     argv = ["ffmpeg", "-hide_banner", "-y"]
     for p in parts:
         argv += ["-i", str(p)]
     pre = ";".join(f"[{i}:a]aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono[a{i}]" for i in range(len(parts)))
     joined = "".join(f"[a{i}]" for i in range(len(parts)))
     graph = (f"{pre};{joined}concat=n={len(parts)}:v=0:a=1,"
+             "highpass=f=70,adeclick,afftdn=nr=6:nf=-45,deesser=i=0.3,"
              "silenceremove=start_periods=1:start_threshold=-45dB:stop_periods=-1:stop_duration=0.3:"
-             f"stop_threshold=-45dB:stop_silence=0.25,atrim=0:{max_s}[out]")
+             f"stop_threshold=-45dB:stop_silence=0.25,atrim=0:{max_s},loudnorm=I=-18:TP=-2[out]")
     return argv + ["-filter_complex", graph, "-map", "[out]", "-ar", "24000", "-c:a", "pcm_s16le", str(out)]
 
 
@@ -127,24 +129,47 @@ def _cand_seed(rel: str) -> int:
 # ---------------------------------------------------------------- level 1: references
 @step("voice.reference")
 def reference(ctx: Ctx) -> dict:
+    """The English reference, made only of cloned speech (the pitched design candidate is
+    the prompt, not part of the reference, so its pitch-shift artefacts are not cloned into
+    every line): four sentences, the best of three takes each, joined and cleaned."""
     ch = ctx.ch
     chosen = ctx.abs(ctx.need("pick")["chosen"])
-    tts, work = _tts(ctx), ctx.path("voice", "reference", ctx.name)
-    parts = [chosen]
+    tts, sim, asr = _tts(ctx), Resemblyzer(), Whisper(ctx.model("whisper"))
+    names = [c.name for c in ctx.bible.characters.values()]
+    work = ctx.path("voice", "reference", ctx.name)
+    parts, report = [], []
     for i, line in enumerate(REF_SENTENCES_EN):
-        out = work / f"s{i}.wav"
-        tts(line, "en", chosen, ch.voice.exaggeration, ch.voice.cfg_weight, _seed(ctx) + i, out)
-        parts.append(out)
-    ref = ctx.abs(ch.voice.refs["en"])
-    ref.parent.mkdir(parents=True, exist_ok=True)
-    run(reference_argv(parts, ref))
-    secs = wav_seconds(ref)
+        takes = []
+        for k in range(TAKES):
+            dst = work / f"s{i}_t{k}.wav"
+            tts(line, "en", chosen, ch.voice.exaggeration, ch.voice.cfg_weight, _seed(ctx) + 10 * i + k, dst)
+            found = defects(dst, line, "en", ch.voice.pace)
+            s, w = sim(chosen, dst), word_error_rate(line, match_names(asr(dst, "en"), names))
+            takes.append((take_score(s, w, found), dst, round(s, 3), round(w, 3), found))
+        best = max(takes, key=lambda t: t[0])
+        parts.append(best[1])
+        report.append({"line": line, "take": ctx.rel(best[1]), "similarity": best[2], "wer": best[3], "defects": best[4]})
+    joined = work / "joined.wav"
+    run(reference_argv(parts, joined))
+    secs = wav_seconds(joined)
     if secs < 10:
         raise RuntimeError(f"the reference is {secs:.1f}s; the plan asks for 10-15 s of clean speech")
+    ref = ctx.abs(ch.voice.refs["en"])
+    ref.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(joined, ref)
     recipe = ctx.abs(ch.voice.recipe) if ch.voice.recipe else ctx.path("voice", "recipes") / f"{ctx.name}.json"
     Recipe(ch.id, ctx.model_repo("voice_design"), ch.voice.parler_description, DESIGN_LINE,
            ctx.need("pick")["seed"], ch.voice.pitch_semitones).save(recipe)
-    return {"ref": ctx.rel(ref), "seconds": secs, "recipe": ctx.rel(recipe)}
+    return {"ref": ctx.rel(ref), "seconds": secs, "recipe": ctx.rel(recipe), "sentences": report,
+            "f0_hz": _f0(ref)}
+
+
+def _f0(path: Path) -> float | None:
+    try:
+        f0 = f0_median(path)
+    except ImportError:  # numpy comes with the GPU stack; without it the pitch is simply not reported
+        return None
+    return round(f0, 1) if f0 else None
 
 
 @step("voice.emotions")
@@ -226,15 +251,18 @@ def validate(ctx: Ctx) -> dict:
             raise NeedsAction(str(e)) from e
         ref = ctx.abs(ch.voice.refs[lang])
         work = ctx.path("voice", "validate", ctx.name, lang)
-        sims, wers = [], []
+        sims, wers, flawed = [], [], 0
+        names = [c.name for c in ctx.bible.characters.values()]
         for i, text in enumerate(lines):
             dst = work / f"line_{i:02d}.wav"
             tts(text, lang, ref, ch.voice.exaggeration, ch.voice.cfg_weight, _seed(ctx) + 200 + i, dst)
             sims.append(sim(ref, dst))
-            wers.append(word_error_rate(text, asr(dst, lang)))
+            wers.append(word_error_rate(text, match_names(asr(dst, lang), names)))
+            flawed += bool(defects(dst, text, lang, ch.voice.pace))
         stats[lang] = {"lines": len(lines), "mean_similarity": round(statistics.fmean(sims), 3),
                        "fail_rate": round(sum(s < MIN_SIMILARITY for s in sims) / len(sims), 3),
-                       "mean_wer": round(statistics.fmean(wers), 3)}
+                       "mean_wer": round(statistics.fmean(wers), 3),
+                       "defect_rate": round(flawed / len(lines), 3)}  # first takes: production keeps the best of 3
     advised = any(s["fail_rate"] > RVC_FAIL_RATE for s in stats.values())
     passed = all(s["mean_similarity"] >= MIN_SIMILARITY and s["fail_rate"] <= RVC_FAIL_RATE for s in stats.values())
     return {"stats": stats, "rvc_advised": advised, "passed": passed}

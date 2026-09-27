@@ -1,15 +1,20 @@
 import json
+import re
 
 import pytest
 
 from studio.lora import (build_dataset, caption_problems, check_mix, eval_prompts, fixed_words, kohya_argv,
                          repeats_for, trigger)
-from studio.voice import ATTEMPTS, pitch_argv, pitch_ratio, ref_for, voice_episode
+from studio.voice import pitch_argv, pitch_ratio, ref_for, voice_episode
+from studio.voice_quality import ROUNDS, TAKES
 
 
 def test_pitch_follows_the_plan_and_stops_at_plus_five():
     assert pitch_ratio(4) == pytest.approx(1.26, abs=0.001)  # the plan's example
-    assert "rubberband=pitch=1.1892" in " ".join(pitch_argv("a.wav", "b.wav", 3))
+    af = pitch_argv("a.wav", "b.wav", 3)[6]
+    ratios = [float(x) for x in re.findall(r"rubberband=pitch=([0-9.]+)", af)]
+    assert len(ratios) == 2 and ratios[0] * ratios[1] == pytest.approx(2 ** (3 / 12), abs=1e-4)
+    assert "formant=shifted" in af and "formant=preserved" in af  # only part of the shift moves the formants
     with pytest.raises(ValueError, match="chipmunk"):
         pitch_ratio(6)
 
@@ -35,7 +40,7 @@ def fakes(bad_lines=(), always_bad=()):
         return 0.06 * len(text)
 
     def similarity(ref, wav):
-        lid = wav.stem
+        lid = wav.stem.split("_t")[0]
         tries[lid] = tries.get(lid, 0) + 1
         if lid in always_bad or (lid in bad_lines and tries[lid] == 1):
             return 0.6
@@ -47,12 +52,13 @@ def fakes(bad_lines=(), always_bad=()):
     return synth, similarity, transcribe, tries
 
 
-def test_each_line_is_checked_and_remade_up_to_three_times(tmp_path, bible, pilot):
+def test_each_line_keeps_its_best_take_and_flags_what_never_passes(tmp_path, bible, pilot):
     synth, sim, heard, tries = fakes(bad_lines={"l_003"}, always_bad={"l_005"})
-    report = voice_episode(tmp_path, bible, pilot, "en", tmp_path / "audio/en", synth, sim, heard, log=lambda m: None)
+    report = voice_episode(tmp_path, bible, pilot, "en", tmp_path / "audio/en", synth, sim, heard, log=lambda m: None,
+                           check=lambda *a: [], finish=None)
     by_id = {r["line_id"]: r for r in report["lines"]}
-    assert by_id["l_003"]["attempts"] == 2 and by_id["l_003"]["passed"]
-    assert by_id["l_005"]["attempts"] == ATTEMPTS and not by_id["l_005"]["passed"]
+    assert by_id["l_003"]["takes"] == TAKES and by_id["l_003"]["passed"]  # one bad take of three: still one round
+    assert by_id["l_005"]["takes"] == TAKES * ROUNDS and not by_id["l_005"]["passed"]
     assert report["flagged"] == ["l_005"] and not report["rvc_advised"]
     lengths = json.loads((tmp_path / "audio/en/lengths.json").read_text())
     assert set(lengths) == {l.id for l in pilot.lines()}
@@ -61,7 +67,8 @@ def test_each_line_is_checked_and_remade_up_to_three_times(tmp_path, bible, pilo
 def test_rvc_is_advised_when_the_voice_keeps_drifting(tmp_path, bible, pilot):
     ids = [l.id for l in pilot.lines()]
     synth, sim, heard, _ = fakes(always_bad=set(ids[:5]))
-    report = voice_episode(tmp_path, bible, pilot, "es", tmp_path / "audio/es", synth, sim, heard, log=lambda m: None)
+    report = voice_episode(tmp_path, bible, pilot, "es", tmp_path / "audio/es", synth, sim, heard, log=lambda m: None,
+                           check=lambda *a: [], finish=None)
     assert report["rvc_advised"]
 
 

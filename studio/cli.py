@@ -5,6 +5,7 @@
   studio idea next [--month N]             the next idea gate 0 accepts
   studio write [--backend cli|api]         write, gate and translate the next episode
   studio gate text EPISODE [--lang L]      gate 1 (and novelty) on an episode.json
+  studio voice EPISODE [--enhance]         every line: best of 3 takes, studio chain, 48 kHz / 24-bit
   studio plan EPISODE LENGTHS              timeline + Blender shot plan from measured audio
   studio guard scan                        banned model names in code and settings
   studio models install NEED|all           install models whose license is allowed
@@ -126,6 +127,32 @@ def cmd_plan(args) -> int:
     out = Path(args.out) if args.out else Path(args.episode).with_name("shots.json")
     out.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"{len(tl.shots)} shots, {tl.duration:.1f}s -> {out}")
+    return 0
+
+
+def cmd_voice(args) -> int:
+    """Voices an episode on a free card: best of three takes per line, the studio chain."""
+    from .episode import Episode
+    from .gpu import Busy, Job, Scheduler
+    from .models_guard import GuardError, Lock, load_model
+    from .voice import Chatterbox, Enhancer, Resemblyzer, Whisper, voice_episode
+    root = _root(args)
+    bible = load_bible(root)
+    ep = Episode.load(Path(args.episode))
+    lock, cache = Lock(root / "models.lock.json"), root / "runtime" / "verified.json"
+    langs = [args.lang] if args.lang else [ep.language, *ep.translations]
+    try:
+        with Scheduler(root / "runtime").card(Job(f"{ep.id}/voice", "voice_check"), wait_s=args.wait):
+            tts = Chatterbox(load_model("voice", lock, cache))
+            sim, asr = Resemblyzer(), Whisper(load_model("whisper", lock, cache))
+            enh = Enhancer(load_model("enhance", lock, cache)) if args.enhance else None
+            for lang in langs:
+                out = Path(args.episode).parent / "audio" / lang
+                rep = voice_episode(root, bible, ep, lang, out, tts, sim, asr, enhance=enh)
+                print(f"{lang}: {len(rep['lines'])} lines, {len(rep['flagged'])} flagged for a person -> {out}")
+    except (Busy, GuardError) as e:
+        print(f"voice: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -257,6 +284,7 @@ def cmd_agent_status(args) -> int:
     bible, cfg, plan, store, mgr = _agent(_root(args))
     for ch, parts in mgr.progress().items():
         print(f"{bible.characters[ch].name:6} voice {parts['voice'][0]:2}/{parts['voice'][1]}   look {parts['look'][0]:2}/{parts['look'][1]}")
+    _voices(bible, _root(args))
     labels = {"waiting": "YOUR TURN", "blocked": "NEEDS YOU", "failed": "FAILED", "running": "RUNNING"}
     for status, label in labels.items():
         for r in store.by_status(status):
@@ -264,6 +292,25 @@ def cmd_agent_status(args) -> int:
             why = f": {(r['error'] or '').strip().splitlines()[-1][:160]}" if status in ("blocked", "failed") and r["error"] else ""
             print(f"{label:10} {r['id']}{extra}{why}")
     return 0
+
+
+def _voices(bible, root: Path) -> None:
+    """The pitch of every finished English reference, and voices that would sound alike."""
+    from .voice_quality import f0_median, voice_clashes
+    measured = {}
+    for c in bible.characters.values():
+        ref = root / c.voice.refs.get("en", "")
+        if c.voice.refs.get("en") and ref.exists():
+            try:
+                f0 = f0_median(ref)
+            except ImportError:
+                return
+            if f0:
+                measured[c.name] = (f0, c.voice.pace)
+    if measured:
+        print("voices: " + ", ".join(f"{n} {f:.0f} Hz ({p})" for n, (f, p) in measured.items()))
+        for clash in voice_clashes(measured):
+            print("TOO CLOSE  " + clash)
 
 
 def cmd_agent_serve(args) -> int:
@@ -343,6 +390,13 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("lengths", help="JSON: line id -> seconds of audio")
     c.add_argument("--out")
     c.set_defaults(fn=cmd_plan)
+
+    c = sub.add_parser("voice", help="voice an episode: best of 3 takes per line, studio chain")
+    c.add_argument("episode")
+    c.add_argument("--lang")
+    c.add_argument("--enhance", action="store_true", help="Resemble Enhance before the chain (studio models install enhance)")
+    c.add_argument("--wait", type=float, default=0)
+    c.set_defaults(fn=cmd_voice)
 
     guard = sub.add_parser("guard").add_subparsers(dest="sub", required=True)
     guard.add_parser("scan").set_defaults(fn=cmd_guard_scan)

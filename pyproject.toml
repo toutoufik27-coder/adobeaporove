@@ -12,7 +12,7 @@ api = ["anthropic>=1.8"]
 models = ["huggingface_hub>=0.24"]
 # the training agent's pictures (poses, palette checks, contact sheets)
 agent = ["pillow>=10"]
-dev = ["pytest>=8", "pillow>=10"]
+dev = ["pytest>=8", "pillow>=10", "numpy>=1.24"]
 
 [project.scripts]
 studio = "studio.cli:main"

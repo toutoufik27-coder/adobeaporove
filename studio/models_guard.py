@@ -42,12 +42,14 @@ PLAN: dict[str, list[tuple[str, str | None]]] = {
     "pose": [("xinsir/controlnet-openpose-sdxl-1.0", None), ("thibaud/controlnet-openpose-sdxl-1.0", None)],
     "ip_adapter": [("h94/IP-Adapter", "sdxl_models/ip-adapter_sdxl.safetensors")],
     "music": [("ACE-Step/ACE-Step-v1-3.5B", None)],
+    "enhance": [("ResembleAI/resemble-enhance", None)],
 }
 # when every candidate is refused, the pipeline changes plan instead of stopping
 FALLBACK = {
     "voice_rvc": "skip level 2, stay on level 1 (Chatterbox with the reference)",
     "pose": "IP-Adapter with the reference image alone",
     "music": "public-domain nursery melodies + the YouTube Audio Library",
+    "enhance": "no enhancement model: the ffmpeg studio chain alone",
 }
 
 

@@ -6,6 +6,7 @@
   studio write [--backend cli|api]         write, gate and translate the next episode
   studio gate text EPISODE [--lang L]      gate 1 (and novelty) on an episode.json
   studio voice EPISODE [--enhance]         every line: best of 3 takes, studio chain, 48 kHz / 24-bit
+  studio act EPISODE                       the acting director: acting.json (gestures on words, reactions)
   studio plan EPISODE LENGTHS              timeline + Blender shot plan from measured audio
   studio guard scan                        banned model names in code and settings
   studio models install NEED|all           install models whose license is allowed
@@ -123,10 +124,39 @@ def cmd_plan(args) -> int:
     ep = Episode.load(Path(args.episode))
     lengths = json.loads(Path(args.lengths).read_text())
     tl = build_timeline(ep, lengths, bible.world.fps)
-    plan = {"timeline": json.loads(tl.to_json()), "shots": shot_plan(bible, ep, tl)}
+    acting_path = Path(args.episode).with_name("acting.json")
+    acting = None
+    if acting_path.exists():
+        from .acting import load as load_acting
+        acting = load_acting(acting_path)
+    plan = {"timeline": json.loads(tl.to_json()), "shots": shot_plan(bible, ep, tl, acting),
+            "acting": bool(acting)}
     out = Path(args.out) if args.out else Path(args.episode).with_name("shots.json")
     out.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"{len(tl.shots)} shots, {tl.duration:.1f}s -> {out}")
+    print(f"{len(tl.shots)} shots, {tl.duration:.1f}s, {'directed acting' if acting else 'default acting'} -> {out}")
+    return 0
+
+
+def cmd_act(args) -> int:
+    """The acting director: Claude plans the performance of every line; code checks it."""
+    from .acting import direct, save
+    from .episode import Episode
+    from .llm import LLMError, backend
+    root = _root(args)
+    bible = load_bible(root)
+    ep = Episode.load(Path(args.episode))
+    try:
+        plan, report = direct(bible, ep, backend(args.backend, args.model), rounds=args.rounds)
+    except LLMError as e:
+        print(f"act: {e}", file=sys.stderr)
+        return 1
+    out = Path(args.episode).with_name("acting.json")
+    save(plan, out)
+    for i in report.issues:
+        print(i)
+    beats = sum(len(la.beats) for la in plan.lines)
+    reactions = sum(len(la.listeners) for la in plan.lines)
+    print(f"{len(plan.lines)} lines, {beats} acting beats, {reactions} reactions -> {out}")
     return 0
 
 
@@ -390,6 +420,13 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("lengths", help="JSON: line id -> seconds of audio")
     c.add_argument("--out")
     c.set_defaults(fn=cmd_plan)
+
+    c = sub.add_parser("act", help="the acting director: an acting plan for every line (acting.json)")
+    c.add_argument("episode")
+    c.add_argument("--backend", choices=["cli", "api"], default="cli")
+    c.add_argument("--model")
+    c.add_argument("--rounds", type=int, default=2)
+    c.set_defaults(fn=cmd_act)
 
     c = sub.add_parser("voice", help="voice an episode: best of 3 takes per line, studio chain")
     c.add_argument("episode")

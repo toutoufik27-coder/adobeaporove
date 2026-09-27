@@ -10,7 +10,9 @@ dependencies = ["pydantic>=2.6"]
 api = ["anthropic>=1.8"]
 # model installation with the license check (Hugging Face model cards)
 models = ["huggingface_hub>=0.24"]
-dev = ["pytest>=8"]
+# the training agent's pictures (poses, palette checks, contact sheets)
+agent = ["pillow>=10"]
+dev = ["pytest>=8", "pillow>=10"]
 
 [project.scripts]
 studio = "studio.cli:main"

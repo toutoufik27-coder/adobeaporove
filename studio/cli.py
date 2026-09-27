@@ -10,6 +10,8 @@
   studio models install NEED|all           install models whose license is allowed
   studio models verify                     fingerprints of every locked model
   studio gpu status                        both cards: live numbers and registered jobs
+  studio agent init|run|status|serve|retry|log|report
+                                           the training agent: voices and looks, on both cards
   studio gpu run [--any-time] KIND NAME -- CMD...   run a command on a free card, in its window
 """
 from __future__ import annotations
@@ -194,6 +196,114 @@ def cmd_gpu_run(args) -> int:
         return 75
 
 
+def _agent(root: Path):
+    from .agent.config import load_config
+    from .agent.manager import Manager, SubprocessLauncher
+    from .agent.plan import build_plan
+    from .agent.store import Store
+    from .gpu import Scheduler
+    from .llm import backend
+    bible = load_bible(root)
+    cfg = load_config(root)
+    plan = build_plan(bible, cfg)
+    store = Store(root / "runtime" / "agent.db")
+    mgr = Manager(root, bible, cfg, plan, store, Scheduler(root / "runtime"), SubprocessLauncher(root),
+                  llm=backend(cfg.llm) if cfg.llm else None)
+    return bible, cfg, plan, store, mgr
+
+
+def cmd_agent_init(args) -> int:
+    from .agent.config import AgentConfig
+    root = _root(args)
+    cfg_path = root / "agent.json"
+    if not cfg_path.exists():
+        cfg_path.write_text(json.dumps(AgentConfig().model_dump(), indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {cfg_path}: set kohya_dir, and rvc_train_cmd if you will need RVC")
+    bible, cfg, plan, store, mgr = _agent(root)
+    per = {}
+    for t in plan:
+        per[t.character] = per.get(t.character, 0) + 1
+    print(f"{len(plan)} tasks: " + ", ".join(f"{bible.characters[c].name} {n}" for c, n in per.items()))
+    return 0
+
+
+def cmd_agent_run(args) -> int:
+    import fcntl
+
+    from .agent.review import App, serve
+    root = _root(args)
+    bible, cfg, plan, store, mgr = _agent(root)
+    lock = open(root / "runtime" / "agent.lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("the agent is already running (runtime/agent.lock)", file=sys.stderr)
+        return 1
+    app = App(root, store, plan, {c.id: c.name for c in bible.characters.values()}, retry=mgr.retry)
+    srv = serve(app, cfg.review_port if args.port is None else args.port)
+    print(f"review page: http://127.0.0.1:{srv.server_address[1]}")
+    if args.once:
+        mgr.tick()
+        srv.shutdown()
+        return 0
+    try:
+        mgr.run()
+    except KeyboardInterrupt:
+        print("\nstopped. Workers already started keep going; `studio agent run` picks everything up again.")
+    return 0
+
+
+def cmd_agent_status(args) -> int:
+    bible, cfg, plan, store, mgr = _agent(_root(args))
+    for ch, parts in mgr.progress().items():
+        print(f"{bible.characters[ch].name:6} voice {parts['voice'][0]:2}/{parts['voice'][1]}   look {parts['look'][0]:2}/{parts['look'][1]}")
+    labels = {"waiting": "YOUR TURN", "blocked": "NEEDS YOU", "failed": "FAILED", "running": "RUNNING"}
+    for status, label in labels.items():
+        for r in store.by_status(status):
+            extra = f" (GPU {r['card']})" if status == "running" and r["card"] is not None else ""
+            why = f": {(r['error'] or '').strip().splitlines()[-1][:160]}" if status in ("blocked", "failed") and r["error"] else ""
+            print(f"{label:10} {r['id']}{extra}{why}")
+    return 0
+
+
+def cmd_agent_serve(args) -> int:
+    import time as _time
+
+    from .agent.review import App, serve
+    root = _root(args)
+    bible, cfg, plan, store, mgr = _agent(root)
+    srv = serve(App(root, store, plan, {c.id: c.name for c in bible.characters.values()}, retry=mgr.retry),
+                cfg.review_port if args.port is None else args.port)
+    print(f"review page: http://127.0.0.1:{srv.server_address[1]}")
+    try:
+        while True:
+            _time.sleep(3600)
+    except KeyboardInterrupt:
+        return 0
+
+
+def cmd_agent_retry(args) -> int:
+    *_, mgr = _agent(_root(args))
+    ids = mgr.retry(args.task)
+    print("reset: " + ", ".join(ids))
+    return 0
+
+
+def cmd_agent_log(args) -> int:
+    from .agent.manager import log_path
+    p = log_path(_root(args), args.task)
+    print(p.read_text(encoding="utf-8", errors="replace")[-args.chars:] if p.exists() else f"no log yet: {p}")
+    return 0
+
+
+def cmd_agent_report(args) -> int:
+    import time as _time
+    *_, store, _mgr = _agent(_root(args))
+    for e in store.events(_time.time() - args.hours * 3600):
+        print(f"{_time.strftime('%m-%d %H:%M', _time.localtime(e['ts']))} {e['level']:9} {e['task'] or ''} {e['message']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="studio", description="Kiko & Friends production line")
     p.add_argument("--root", help="project folder (default: the one holding bible/world.json)")
@@ -253,6 +363,27 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--any-time", action="store_true", help="ignore the day/night window (VRAM is still checked)")
     c.add_argument("cmd", nargs=argparse.REMAINDER)
     c.set_defaults(fn=cmd_gpu_run)
+
+    agent = sub.add_parser("agent").add_subparsers(dest="sub", required=True)
+    agent.add_parser("init").set_defaults(fn=cmd_agent_init)
+    c = agent.add_parser("run")
+    c.add_argument("--once", action="store_true", help="one pass, then exit")
+    c.add_argument("--port", type=int)
+    c.set_defaults(fn=cmd_agent_run)
+    agent.add_parser("status").set_defaults(fn=cmd_agent_status)
+    c = agent.add_parser("serve")
+    c.add_argument("--port", type=int)
+    c.set_defaults(fn=cmd_agent_serve)
+    c = agent.add_parser("retry")
+    c.add_argument("task")
+    c.set_defaults(fn=cmd_agent_retry)
+    c = agent.add_parser("log")
+    c.add_argument("task")
+    c.add_argument("--chars", type=int, default=6000)
+    c.set_defaults(fn=cmd_agent_log)
+    c = agent.add_parser("report")
+    c.add_argument("--hours", type=float, default=24)
+    c.set_defaults(fn=cmd_agent_report)
     return p
 
 

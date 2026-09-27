@@ -31,16 +31,19 @@ RESERVE_GB = 1.5  # CUDA context, fragmentation
 KINDS: dict[str, tuple[float, bool, str]] = {
     "train_lora": (22.0, True, "night"),    # SDXL LoRA, bf16, batch 2, gradient checkpointing
     "train_rvc": (10.0, True, "night"),
-    "image": (11.0, False, "day"),          # SDXL inference + ControlNet/IP-Adapter
+    "image": (12.0, False, "day"),          # SDXL inference + ControlNet/IP-Adapter: one per card
     "segment": (6.0, False, "day"),         # SAM 2
     "voice_design": (5.0, False, "any"),    # Parler-TTS mini
     "voice": (6.0, False, "any"),           # Chatterbox / Multilingual
     "whisper": (6.0, False, "any"),
+    "voice_check": (12.0, False, "any"),    # Chatterbox + Whisper + Resemblyzer in one process
+    "cpu": (0.0, False, "any"),             # no card at all
     "render": (4.0, False, "day"),          # Blender Eevee, flat puppets
 }
 
 # the training lab's split: which card a kind of work prefers
-PREFERRED = {"image": 0, "render": 0, "segment": 0, "voice_design": 0, "voice": 1, "whisper": 1, "train_rvc": 1}
+PREFERRED = {"image": 0, "render": 0, "segment": 0, "voice_design": 0, "voice": 1, "whisper": 1, "voice_check": 1,
+             "train_rvc": 1}
 LORA_CARD = {"ch_01": 0, "ch_03": 0, "ch_05": 0, "ch_02": 1, "ch_04": 1, "ch_06": 1}
 
 NIGHT = (22, 8)  # 22:00 to 08:00
@@ -131,6 +134,14 @@ class Scheduler:
             return [LORA_CARD[job.name]]
         first = PREFERRED.get(job.kind, 0)
         return [first] + [c for c in CARDS if c != first]
+
+    def free_card(self, job: Job) -> int | None:
+        """The card the job would get now, without taking it (the window is not checked)."""
+        for card in self.cards_for(job):
+            with self._locked(card) as box:
+                if fits(job, box["running"]):
+                    return card
+        return None
 
     def acquire(self, job: Job, pid: int | None = None, force_window: bool = False) -> int:
         now = self.clock()

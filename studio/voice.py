@@ -128,10 +128,14 @@ def voice_episode(root: Path, bible, ep: Episode, lang: str, out_dir: Path, synt
 
 # ---------------------------------------------------------------- GPU adapters
 class Chatterbox:
-    """Chatterbox for English, Chatterbox Multilingual for the dubs (MIT)."""
+    """Chatterbox for English, Chatterbox Multilingual for the dubs (MIT), loaded from the
+    folder the license guard installed (never downloaded behind its back)."""
 
-    def __init__(self, device: str = "cuda"):
-        self.device, self._en, self._mtl = device, None, None
+    def __init__(self, ckpt_dir: Path | None = None, device: str = "cuda"):
+        self.ckpt, self.device, self._en, self._mtl = ckpt_dir, device, None, None
+
+    def _load(self, cls):
+        return cls.from_local(str(self.ckpt), self.device) if self.ckpt else cls.from_pretrained(device=self.device)
 
     def __call__(self, text, lang, ref, exaggeration, cfg_weight, seed, out) -> float:
         import torch
@@ -140,13 +144,13 @@ class Chatterbox:
         if lang == "en":
             if self._en is None:
                 from chatterbox.tts import ChatterboxTTS
-                self._en = ChatterboxTTS.from_pretrained(device=self.device)
+                self._en = self._load(ChatterboxTTS)
             model = self._en
             wav = model.generate(text, audio_prompt_path=str(ref), exaggeration=exaggeration, cfg_weight=cfg_weight)
         else:
             if self._mtl is None:
                 from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-                self._mtl = ChatterboxMultilingualTTS.from_pretrained(device=self.device)
+                self._mtl = self._load(ChatterboxMultilingualTTS)
             model = self._mtl
             wav = model.generate(text, language_id=lang, audio_prompt_path=str(ref),
                                  exaggeration=exaggeration, cfg_weight=cfg_weight)
@@ -170,14 +174,16 @@ class Resemblyzer:
 
 
 class Whisper:
-    """What was actually said (openai-whisper, MIT)."""
+    """What was actually said: the Whisper weights the license guard installed, through
+    the transformers speech-recognition pipeline."""
 
-    def __init__(self, model_path: str = "large-v3-turbo", device: str = "cuda"):
-        import whisper
-        self.model = whisper.load_model(model_path, device=device)
+    def __init__(self, model_dir: Path, device: str = "cuda:0"):
+        import torch
+        from transformers import pipeline
+        self.asr = pipeline("automatic-speech-recognition", model=str(model_dir), torch_dtype=torch.float16, device=device)
 
     def __call__(self, wav: Path, lang: str) -> str:
-        return self.model.transcribe(str(wav), language=lang)["text"]
+        return self.asr(str(wav), generate_kwargs={"language": lang, "task": "transcribe"})["text"]
 
 
 def design_candidates(ch: Character, out_dir: Path, model_path: str, n: int = 20, device: str = "cuda") -> list[Path]:

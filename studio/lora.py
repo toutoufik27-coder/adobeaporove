@@ -28,6 +28,10 @@ MIX_TOL = 0.10
 STYLE = "flat 2D children's cartoon, thick clean outlines, soft cel shading, simple shapes"
 _STOP = {"always", "worn", "on", "a", "the", "with", "her", "his", "their", "that", "when", "before", "every", "step",
          "and", "of", "to", "up", "short", "neck", "cord", "changes", "colour", "feeling", "running", "falls", "jingles"}
+# words a caption needs for what changes (pose, view, framing): never "fixed", even when a
+# trait uses them (Nilo's hair is a "neat side part"; "side view" must stay allowed)
+_CAPTION_WORDS = {"side", "front", "back", "left", "right", "top", "view", "full", "half", "body", "close", "standing",
+                  "sitting", "walking", "running", "jumping", "waving", "pointing", "head", "hand", "arms"}
 # a colour alone is not the item: "yellow flowers" is a free caption, "overalls" is not
 _COLOURS = {"red", "yellow", "blue", "green", "orange", "purple", "pink", "white", "black", "brown", "grey", "gray"}
 
@@ -39,7 +43,7 @@ def trigger(ch: Character) -> str:
 def fixed_words(ch: Character) -> set[str]:
     """Words for what never changes on the character: they must not be in any caption."""
     parts = [*ch.visual.outfit_fixed.values(), ch.visual.signature, ch.visual.hair.style]
-    words = {w for p in parts for w in re.split(r"[_\s-]+", p.lower()) if w and w not in _STOP | _COLOURS}
+    words = {w for p in parts for w in re.split(r"[_\s-]+", p.lower()) if w and w not in _STOP | _COLOURS | _CAPTION_WORDS}
     plural = {w + "s" for w in words} | {w[:-1] for w in words if w.endswith("s")}
     return words | plural
 

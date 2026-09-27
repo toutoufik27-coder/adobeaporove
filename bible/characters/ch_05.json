@@ -1,0 +1,85 @@
+{
+  "id": "ch_05",
+  "name": "Zuzu",
+  "pronunciation": "ZOO-zoo",
+  "group": "core",
+  "archetype": "the_impulsive_one",
+  "role": "the youngest: makes the mistake first, learns and says sorry",
+  "age_apparent": 4,
+  "domain": "movement_play_and_sounds",
+  "lead_stage": "rush",
+  "visual": {
+    "silhouette": "small_round_bouncy",
+    "head_body_ratio": "1:2.0",
+    "primary_color": "#4FA24A",
+    "hair": {
+      "style": "tufty",
+      "color": "#3B2416"
+    },
+    "skin": "#D9A07A",
+    "outfit_fixed": {
+      "top": "loose_green_blouse",
+      "hat": "tilted_cap"
+    },
+    "signature": "tilted_hat_that_falls_when_running",
+    "palette": [
+      "#4FA24A",
+      "#CFE8B8",
+      "#D9A07A",
+      "#E0463A",
+      "#3B2416"
+    ],
+    "symmetric": false
+  },
+  "personality": {
+    "traits": [
+      "energetic",
+      "playful",
+      "impulsive"
+    ],
+    "speech": {
+      "sentence_words": [
+        3,
+        5
+      ],
+      "vocabulary_grade": 1,
+      "tone": "bouncy",
+      "style": "interrupts_then_apologizes",
+      "catchphrase": {
+        "en": "Oops! I'll fix it!",
+        "es": "¡Uy! ¡Yo lo arreglo!"
+      }
+    },
+    "never_does": [
+      "hurting_anyone",
+      "repeating_a_mistake_after_a_warning"
+    ]
+  },
+  "relationships": {
+    "ch_03": "big_brother_figure",
+    "ch_04": "listens_to",
+    "pet_05": "companion"
+  },
+  "voice": {
+    "parler_description": "A very young child speaks in a high, playful, bouncy voice, fast and energetic, very clear recording.",
+    "pitch_semitones": 5,
+    "pace": "fast",
+    "exaggeration": 0.9,
+    "cfg_weight": 0.3,
+    "refs": {
+      "en": "assets/voices/en/zuzu.wav",
+      "es": "assets/voices/es/zuzu.wav"
+    },
+    "recipe": "assets/voice-recipes/zuzu.json"
+  },
+  "motion_style": {
+    "speed": 1.3,
+    "bounce": 1.35
+  },
+  "assets": {
+    "rig": "assets/rigs/ch_05/rig.json",
+    "mouths": "assets/rigs/ch_05/mouth/",
+    "turnaround": "assets/refs/ch_05/",
+    "lora": "assets/loras/zuzu_v2.safetensors"
+  }
+}

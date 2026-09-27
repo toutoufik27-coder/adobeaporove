@@ -1,0 +1,13 @@
+{
+  "market": "en_gb",
+  "language": "en",
+  "avoid_terms": [
+    "fanny",
+    "bloody",
+    "bugger"
+  ],
+  "notes": [
+    "UK: 'pants' means underwear",
+    "Bonfire Night involves fire: never a theme (world rule)"
+  ]
+}

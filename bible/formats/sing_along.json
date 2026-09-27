@@ -1,0 +1,46 @@
+{
+  "id": "sing_along",
+  "name": "Sing Along",
+  "content": "an original song, also released on music platforms",
+  "duration_s": 180,
+  "quota": 0.15,
+  "launch_month": 3,
+  "template": [
+    {
+      "id": "intro",
+      "start_s": 0,
+      "end_s": 15,
+      "purpose": "who sings and what the song is about"
+    },
+    {
+      "id": "verse_1",
+      "start_s": 15,
+      "end_s": 60,
+      "purpose": "the lesson told in the first verse"
+    },
+    {
+      "id": "chorus",
+      "start_s": 60,
+      "end_s": 90,
+      "purpose": "the chorus children repeat"
+    },
+    {
+      "id": "verse_2",
+      "start_s": 90,
+      "end_s": 135,
+      "purpose": "the lesson shown in action"
+    },
+    {
+      "id": "chorus_out",
+      "start_s": 135,
+      "end_s": 165,
+      "purpose": "last chorus, everyone joins"
+    },
+    {
+      "id": "outro",
+      "start_s": 165,
+      "end_s": 180,
+      "purpose": "'sing it with a friend!'"
+    }
+  ]
+}

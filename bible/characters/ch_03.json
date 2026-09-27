@@ -1,0 +1,85 @@
+{
+  "id": "ch_03",
+  "name": "Tuka",
+  "pronunciation": "TOO-ka",
+  "group": "core",
+  "archetype": "the_builder",
+  "role": "his first try always fails, and that is the lesson",
+  "age_apparent": 6,
+  "domain": "building_fixing_and_shapes",
+  "lead_stage": "failed_try",
+  "visual": {
+    "silhouette": "wide_sturdy",
+    "head_body_ratio": "1:2.3",
+    "primary_color": "#E07A28",
+    "hair": {
+      "style": "short_spiky",
+      "color": "#1E1410"
+    },
+    "skin": "#8D5A3B",
+    "outfit_fixed": {
+      "top": "orange_shirt_rolled_sleeves",
+      "belt": "tool_belt"
+    },
+    "signature": "tool_belt_that_jingles_when_running",
+    "palette": [
+      "#E07A28",
+      "#6B4A2B",
+      "#8D5A3B",
+      "#9AA3AD",
+      "#1E1410"
+    ],
+    "symmetric": true
+  },
+  "personality": {
+    "traits": [
+      "practical",
+      "persistent",
+      "helpful"
+    ],
+    "speech": {
+      "sentence_words": [
+        4,
+        6
+      ],
+      "vocabulary_grade": 1,
+      "tone": "warm",
+      "style": "action_verbs",
+      "catchphrase": {
+        "en": "Again — another way!",
+        "es": "¡Otra vez, de otra forma!"
+      }
+    },
+    "never_does": [
+      "refusing_help",
+      "getting_angry_at_mistakes"
+    ]
+  },
+  "relationships": {
+    "ch_05": "looks_after",
+    "ch_02": "plans_with",
+    "pet_03": "companion"
+  },
+  "voice": {
+    "parler_description": "A young boy speaks in a warm, slightly low, confident voice at a moderate pace, very clear recording.",
+    "pitch_semitones": 2,
+    "pace": "moderate",
+    "exaggeration": 0.5,
+    "cfg_weight": 0.5,
+    "refs": {
+      "en": "assets/voices/en/tuka.wav",
+      "es": "assets/voices/es/tuka.wav"
+    },
+    "recipe": "assets/voice-recipes/tuka.json"
+  },
+  "motion_style": {
+    "speed": 1.0,
+    "bounce": 1.0
+  },
+  "assets": {
+    "rig": "assets/rigs/ch_03/rig.json",
+    "mouths": "assets/rigs/ch_03/mouth/",
+    "turnaround": "assets/refs/ch_03/",
+    "lora": "assets/loras/tuka_v2.safetensors"
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "id": "ch_04",
+  "name": "Mira",
+  "pronunciation": "MEE-ra",
+  "group": "core",
+  "archetype": "the_sensitive_one",
+  "role": "names feelings out loud; the key character for the lesson",
+  "age_apparent": 5,
+  "domain": "feelings_friendship_and_apology",
+  "lead_stage": "emotion",
+  "visual": {
+    "silhouette": "soft_flowing",
+    "head_body_ratio": "1:2.5",
+    "primary_color": "#D9669A",
+    "hair": {
+      "style": "long_wavy",
+      "color": "#6B3A1E"
+    },
+    "skin": "#F1C7A5",
+    "outfit_fixed": {
+      "dress": "pink_dress",
+      "socks": "striped_socks"
+    },
+    "signature": "scarf_that_changes_colour_with_her_feeling",
+    "palette": [
+      "#D9669A",
+      "#F6D6E4",
+      "#F1C7A5",
+      "#F2C230",
+      "#6B3A1E"
+    ],
+    "symmetric": true
+  },
+  "personality": {
+    "traits": [
+      "empathetic",
+      "gentle",
+      "honest_about_feelings"
+    ],
+    "speech": {
+      "sentence_words": [
+        6,
+        8
+      ],
+      "vocabulary_grade": 1,
+      "tone": "soft",
+      "style": "names_the_feeling",
+      "catchphrase": {
+        "en": "How do you feel now?",
+        "es": "¿Cómo te sientes ahora?"
+      }
+    },
+    "never_does": [
+      "ignoring_someone_sad",
+      "forcing_someone_to_talk"
+    ]
+  },
+  "relationships": {
+    "ch_05": "calms",
+    "ch_01": "friend",
+    "pet_04": "companion"
+  },
+  "voice": {
+    "parler_description": "A young girl speaks softly and gently in a kind, caring voice at a slow pace, very clear recording.",
+    "pitch_semitones": 4,
+    "pace": "slow",
+    "exaggeration": 0.45,
+    "cfg_weight": 0.55,
+    "refs": {
+      "en": "assets/voices/en/mira.wav",
+      "es": "assets/voices/es/mira.wav"
+    },
+    "recipe": "assets/voice-recipes/mira.json"
+  },
+  "motion_style": {
+    "speed": 0.9,
+    "bounce": 0.9
+  },
+  "assets": {
+    "rig": "assets/rigs/ch_04/rig.json",
+    "mouths": "assets/rigs/ch_04/mouth/",
+    "turnaround": "assets/refs/ch_04/",
+    "lora": "assets/loras/mira_v2.safetensors"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "market": "es_es",
+  "language": "es",
+  "avoid_terms": [
+    "gilipollas",
+    "joder",
+    "hostia"
+  ],
+  "notes": [
+    "Spain: 'vale' and 'vosotros' are fine; Latin American audiences understand them"
+  ]
+}

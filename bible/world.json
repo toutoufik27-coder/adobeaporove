@@ -1,0 +1,234 @@
+{
+  "hub": "big_house",
+  "places": [
+    {
+      "id": "big_house",
+      "name": "The Big House",
+      "angles": 4,
+      "lighting": [
+        "morning",
+        "afternoon",
+        "evening"
+      ],
+      "launch": true
+    },
+    {
+      "id": "garden",
+      "name": "The Garden",
+      "angles": 4,
+      "lighting": [
+        "morning",
+        "afternoon",
+        "evening"
+      ],
+      "launch": true
+    },
+    {
+      "id": "workshop",
+      "name": "The Workshop",
+      "angles": 4,
+      "lighting": [
+        "morning",
+        "afternoon",
+        "evening"
+      ],
+      "launch": true
+    },
+    {
+      "id": "near_forest",
+      "name": "The Near Forest",
+      "angles": 4,
+      "lighting": [
+        "morning",
+        "afternoon",
+        "evening"
+      ],
+      "launch": false
+    },
+    {
+      "id": "lake",
+      "name": "The Lake",
+      "angles": 4,
+      "lighting": [
+        "morning",
+        "afternoon",
+        "evening"
+      ],
+      "launch": false
+    },
+    {
+      "id": "small_market",
+      "name": "The Small Market",
+      "angles": 4,
+      "lighting": [
+        "morning",
+        "afternoon",
+        "evening"
+      ],
+      "launch": false
+    },
+    {
+      "id": "school",
+      "name": "The School",
+      "angles": 4,
+      "lighting": [
+        "morning",
+        "afternoon",
+        "evening"
+      ],
+      "launch": false
+    },
+    {
+      "id": "hill",
+      "name": "The Hill",
+      "angles": 4,
+      "lighting": [
+        "morning",
+        "afternoon",
+        "evening"
+      ],
+      "launch": false
+    },
+    {
+      "id": "secret_hideout",
+      "name": "The Secret Hideout",
+      "angles": 4,
+      "lighting": [
+        "morning",
+        "afternoon",
+        "evening"
+      ],
+      "launch": false
+    }
+  ],
+  "rules": [
+    "no cars and no roads",
+    "no sharp tools",
+    "no stoves and no fire",
+    "no unknown strangers",
+    "no dark night",
+    "no deep water without an adult"
+  ],
+  "rule_terms": {
+    "en": [
+      "car",
+      "cars",
+      "truck",
+      "road",
+      "roads",
+      "street",
+      "highway",
+      "traffic",
+      "knife",
+      "knives",
+      "blade",
+      "axe",
+      "fire",
+      "flame",
+      "flames",
+      "stove",
+      "oven",
+      "burn",
+      "stranger",
+      "strangers",
+      "midnight",
+      "dark night",
+      "deep water",
+      "drown"
+    ],
+    "es": [
+      "coche",
+      "coches",
+      "carro",
+      "carros",
+      "camión",
+      "carretera",
+      "calle",
+      "tráfico",
+      "cuchillo",
+      "cuchillos",
+      "hacha",
+      "fuego",
+      "estufa",
+      "horno",
+      "quemar",
+      "desconocido",
+      "desconocidos",
+      "medianoche",
+      "noche oscura",
+      "agua profunda",
+      "ahogar"
+    ]
+  },
+  "languages": [
+    {
+      "code": "en",
+      "order": 1,
+      "month": 0,
+      "primary": true
+    },
+    {
+      "code": "es",
+      "order": 2,
+      "month": 0,
+      "primary": false
+    },
+    {
+      "code": "pt",
+      "order": 3,
+      "month": 3,
+      "primary": false
+    },
+    {
+      "code": "fr",
+      "order": 4,
+      "month": 4,
+      "primary": false
+    },
+    {
+      "code": "de",
+      "order": 5,
+      "month": 5,
+      "primary": false
+    },
+    {
+      "code": "hi",
+      "order": 6,
+      "month": 6,
+      "primary": false
+    },
+    {
+      "code": "ru",
+      "order": 7,
+      "month": 7,
+      "primary": false
+    },
+    {
+      "code": "ar",
+      "order": 8,
+      "month": 8,
+      "primary": false
+    }
+  ],
+  "planned_ids": [
+    "pet_01",
+    "pet_02",
+    "pet_03",
+    "pet_04",
+    "pet_05",
+    "pet_06"
+  ],
+  "banned_names": [
+    "Momo",
+    "Pipi",
+    "Caca",
+    "Bobo",
+    "Coco",
+    "Bluey",
+    "Peppa",
+    "Noon"
+  ],
+  "max_value_share": 0.2,
+  "lesson_repeat_window": 15,
+  "fps": 24
+}

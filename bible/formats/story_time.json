@@ -1,0 +1,46 @@
+{
+  "id": "story_time",
+  "name": "Story Time",
+  "content": "a short story with a clear moral",
+  "duration_s": 480,
+  "quota": 0.1,
+  "launch_month": 7,
+  "template": [
+    {
+      "id": "opener",
+      "start_s": 0,
+      "end_s": 20,
+      "purpose": "fixed theme + the hook question"
+    },
+    {
+      "id": "setup",
+      "start_s": 20,
+      "end_s": 100,
+      "purpose": "an ordinary day in a familiar place, then the problem appears"
+    },
+    {
+      "id": "first_try",
+      "start_s": 100,
+      "end_s": 220,
+      "purpose": "the first try fails: failing is normal and is not stopping"
+    },
+    {
+      "id": "help",
+      "start_s": 220,
+      "end_s": 340,
+      "purpose": "asking for help, working together, the discovery"
+    },
+    {
+      "id": "solution",
+      "start_s": 340,
+      "end_s": 440,
+      "purpose": "the solution: the lesson is seen, not only said"
+    },
+    {
+      "id": "recap",
+      "start_s": 440,
+      "end_s": 480,
+      "purpose": "sung recap + 'and you, what would you do?'"
+    }
+  ]
+}

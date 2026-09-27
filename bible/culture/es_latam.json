@@ -1,0 +1,14 @@
+{
+  "market": "es_latam",
+  "language": "es",
+  "avoid_terms": [
+    "coger",
+    "concha",
+    "pinche",
+    "chingar"
+  ],
+  "notes": [
+    "'coger' is vulgar in much of Latin America: use 'tomar' or 'agarrar'",
+    "'concha' is vulgar in Argentina and Chile: say 'caracola' for a shell"
+  ]
+}

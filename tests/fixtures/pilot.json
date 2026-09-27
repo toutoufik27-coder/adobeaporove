@@ -1,0 +1,264 @@
+{
+  "id": "ep_0001",
+  "format": "feelings_day",
+  "lesson_id": "feel_frustrated_tower",
+  "value": "calming_down",
+  "title": "The Tower That Kept Falling",
+  "logline": "Kiko's tower keeps falling until the friends help Kiko breathe, think and build it another way.",
+  "lead": "ch_01",
+  "roles": {
+    "question": "ch_01",
+    "rush": "ch_05",
+    "caution": "ch_02",
+    "failed_try": "ch_03",
+    "emotion": "ch_04",
+    "discovery": "ch_06"
+  },
+  "cast": [
+    "ch_01",
+    "ch_02",
+    "ch_03",
+    "ch_04",
+    "ch_05",
+    "ch_06"
+  ],
+  "language": "en",
+  "beats": [
+    {
+      "segment": "opener",
+      "place": "workshop",
+      "lighting": "morning",
+      "lines": [
+        {
+          "id": "l_001",
+          "speaker": "ch_01",
+          "text": "Hi, my friends! Can we build the tallest tower? Let's find out!",
+          "emotion": "excited",
+          "action": "wave",
+          "hold_s": 0
+        }
+      ]
+    },
+    {
+      "segment": "setup",
+      "place": "workshop",
+      "lighting": "morning",
+      "lines": [
+        {
+          "id": "l_002",
+          "speaker": "ch_05",
+          "text": "Me first! Block, block, block!",
+          "emotion": "excited",
+          "action": "run",
+          "hold_s": 1.5
+        },
+        {
+          "id": "l_003",
+          "speaker": "ch_02",
+          "text": "Wait, Zuzu, a tall tower needs a wide base.",
+          "emotion": "worried",
+          "action": "think_chin",
+          "hold_s": 0
+        },
+        {
+          "id": "l_004",
+          "speaker": "ch_03",
+          "text": "Up, up, up it goes!",
+          "emotion": "excited",
+          "action": "jump",
+          "hold_s": 0
+        },
+        {
+          "id": "l_005",
+          "speaker": "ch_05",
+          "text": "Oops! The tower fell down!",
+          "emotion": "surprised",
+          "action": "surprise",
+          "hold_s": 2.0
+        }
+      ]
+    },
+    {
+      "segment": "first_try",
+      "place": "workshop",
+      "lighting": "morning",
+      "lines": [
+        {
+          "id": "l_006",
+          "speaker": "ch_01",
+          "text": "Oh no, I feel so frustrated right now!",
+          "emotion": "frustrated",
+          "action": "hands_on_hips",
+          "hold_s": 0
+        },
+        {
+          "id": "l_007",
+          "speaker": "ch_03",
+          "text": "I can do it fast!",
+          "emotion": "excited",
+          "action": "run",
+          "hold_s": 1.0
+        },
+        {
+          "id": "l_008",
+          "speaker": "ch_03",
+          "text": "Oh! It fell again!",
+          "emotion": "surprised",
+          "action": "surprise",
+          "hold_s": 1.5
+        },
+        {
+          "id": "l_009",
+          "speaker": "ch_01",
+          "text": "My tummy feels tight and my hands are hot.",
+          "emotion": "frustrated",
+          "action": "shake_head",
+          "hold_s": 0
+        }
+      ]
+    },
+    {
+      "segment": "help",
+      "place": "workshop",
+      "lighting": "morning",
+      "lines": [
+        {
+          "id": "l_010",
+          "speaker": "ch_04",
+          "text": "Kiko, that feeling is called frustration.",
+          "emotion": "calm",
+          "action": "listen_nod",
+          "hold_s": 0
+        },
+        {
+          "id": "l_011",
+          "speaker": "ch_04",
+          "text": "Let's breathe in slowly, like a big balloon.",
+          "emotion": "calm",
+          "action": "idle_breathe",
+          "hold_s": 3.0
+        },
+        {
+          "id": "l_012",
+          "speaker": "ch_01",
+          "text": "Breathe in and out… I feel a bit better.",
+          "emotion": "calm",
+          "action": null,
+          "hold_s": 0
+        },
+        {
+          "id": "l_013",
+          "speaker": "ch_02",
+          "text": "Let's think about why the tower keeps falling down.",
+          "emotion": "curious",
+          "action": "think_chin",
+          "hold_s": 0
+        },
+        {
+          "id": "l_014",
+          "speaker": "ch_06",
+          "text": "Look… right here. The small blocks are at the bottom.",
+          "emotion": "curious",
+          "action": "point",
+          "hold_s": 0
+        },
+        {
+          "id": "l_015",
+          "speaker": "ch_05",
+          "text": "Big blocks go first!",
+          "emotion": "excited",
+          "action": "happy_bounce",
+          "hold_s": 0
+        }
+      ]
+    },
+    {
+      "segment": "solution",
+      "place": "workshop",
+      "lighting": "morning",
+      "lines": [
+        {
+          "id": "l_016",
+          "speaker": "ch_03",
+          "text": "Again — another way!",
+          "emotion": "proud",
+          "action": "clap",
+          "hold_s": 3.0
+        },
+        {
+          "id": "l_017",
+          "speaker": "ch_01",
+          "text": "Big blocks down, small blocks up. Now it stands tall!",
+          "emotion": "happy",
+          "action": "happy_bounce",
+          "hold_s": 0
+        },
+        {
+          "id": "l_018",
+          "speaker": "ch_04",
+          "text": "How do you feel now?",
+          "emotion": "happy",
+          "action": null,
+          "hold_s": 0
+        },
+        {
+          "id": "l_019",
+          "speaker": "ch_01",
+          "text": "I feel calm and proud. I can try it again!",
+          "emotion": "proud",
+          "action": "proud",
+          "hold_s": 0
+        }
+      ]
+    },
+    {
+      "segment": "recap",
+      "place": "workshop",
+      "lighting": "morning",
+      "lines": [
+        {
+          "id": "l_020",
+          "speaker": "ch_01",
+          "text": "Frustrated? Stop, breathe slowly, and try another way.",
+          "emotion": "excited",
+          "action": "wave",
+          "hold_s": 0
+        },
+        {
+          "id": "l_021",
+          "speaker": "ch_04",
+          "text": "And you? What would you do?",
+          "emotion": "curious",
+          "action": null,
+          "hold_s": 0
+        }
+      ]
+    }
+  ],
+  "translations": {
+    "es": {
+      "l_001": "¡Hola, amigos! ¿Hacemos la torre más alta? ¡Vamos a descubrirlo!",
+      "l_002": "¡Yo! ¡Bloque, bloque, bloque!",
+      "l_003": "Espera, Zuzu. Torre alta, base ancha.",
+      "l_004": "¡Sube, sube, sube!",
+      "l_005": "¡Uy! ¡La torre se cayó!",
+      "l_006": "¡Ay, no! ¡Esto me da mucha frustración!",
+      "l_007": "¡Yo lo hago rápido!",
+      "l_008": "¡Oh! ¡Se cayó otra vez!",
+      "l_009": "Siento la panza dura y las manos calientes.",
+      "l_010": "Kiko, eso que sientes es frustración.",
+      "l_011": "Respira despacio, como un globo grande.",
+      "l_012": "Respira y suelta… Me siento un poco mejor.",
+      "l_013": "Pensemos por qué la torre se sigue cayendo.",
+      "l_014": "Fíjate… justo aquí. Los bloques chicos están abajo.",
+      "l_015": "¡Grandes primero!",
+      "l_016": "¡Otra vez, de otra forma!",
+      "l_017": "Grandes abajo, chicos arriba. ¡Ya está!",
+      "l_018": "¿Cómo te sientes ahora?",
+      "l_019": "¡Siento calma y orgullo! ¡Lo intento otra vez!",
+      "l_020": "¿Frustración? Para, respira y prueba de otra forma.",
+      "l_021": "¿Y tú? ¿Qué harías tú?"
+    }
+  },
+  "status": "draft"
+}

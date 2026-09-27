@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+# produced at run time, never committed
+ledger.db
+episodes/
+assets/
+training/
+models/
+runtime/
+.ruff_cache/

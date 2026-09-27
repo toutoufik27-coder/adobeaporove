@@ -1,0 +1,611 @@
+{
+  "lessons": [
+    {
+      "id": "feel_frustrated_tower",
+      "value": "calming_down",
+      "goal": "name frustration when a tower falls, breathe, try again",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_sad_lost_toy",
+      "value": "naming_feelings",
+      "goal": "say 'I feel sad' when a toy is lost, and let friends help",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_scared_thunder",
+      "value": "asking_for_help",
+      "goal": "a loud sound is scary; tell a grown-up and stay close",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_jealous_new_friend",
+      "value": "sharing",
+      "goal": "feeling left out when a friend plays with someone new",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_excited_waiting",
+      "value": "patience",
+      "goal": "too excited to wait for a turn; count and wait",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_shy_new_game",
+      "value": "trying_again",
+      "goal": "too shy to join a game; take one small step",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_angry_broken_drawing",
+      "value": "calming_down",
+      "goal": "a friend smudged my drawing; stop, breathe, say how it feels",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_disappointed_rain",
+      "value": "naming_feelings",
+      "goal": "the picnic is rained out; name disappointment, find an indoor plan",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_proud_first_time",
+      "value": "naming_feelings",
+      "goal": "proud after doing something hard for the first time",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_lonely_friend_away",
+      "value": "empathy",
+      "goal": "a friend is away; notice someone else feels lonely too",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_embarrassed_spill",
+      "value": "empathy",
+      "goal": "spilling juice in front of everyone; friends help instead of laughing",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_worried_first_day",
+      "value": "asking_for_help",
+      "goal": "worried before something new; say it and make a plan together",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_sorry_bumped",
+      "value": "apologizing",
+      "goal": "bumped a friend by rushing; notice, say sorry, help",
+      "formats": [
+        "feelings_day",
+        "little_helpers"
+      ]
+    },
+    {
+      "id": "feel_grateful_help",
+      "value": "gratitude",
+      "goal": "someone helped; say thank you and how it made you feel",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_happy_together",
+      "value": "cooperation",
+      "goal": "happier when we build it together",
+      "formats": [
+        "feelings_day",
+        "lets_fix_it"
+      ]
+    },
+    {
+      "id": "why_leaves_fall",
+      "value": "curiosity",
+      "goal": "why leaves change colour and fall",
+      "formats": [
+        "why"
+      ]
+    },
+    {
+      "id": "why_rainbow",
+      "value": "curiosity",
+      "goal": "where a rainbow comes from",
+      "formats": [
+        "why"
+      ]
+    },
+    {
+      "id": "fix_wobbly_bridge",
+      "value": "cooperation",
+      "goal": "fix a wobbly toy bridge together",
+      "formats": [
+        "lets_fix_it"
+      ]
+    },
+    {
+      "id": "song_feelings_colours",
+      "value": "naming_feelings",
+      "goal": "a song: every feeling has a colour, like Mira's scarf",
+      "formats": [
+        "sing_along"
+      ]
+    },
+    {
+      "id": "song_tidy_up",
+      "value": "responsibility",
+      "goal": "a tidy-up song",
+      "formats": [
+        "sing_along",
+        "little_helpers"
+      ]
+    },
+    {
+      "id": "count_to_ten_apples",
+      "value": "counting",
+      "goal": "count apples to ten in the garden",
+      "formats": [
+        "count_and_discover"
+      ]
+    },
+    {
+      "id": "shapes_in_the_workshop",
+      "value": "shapes",
+      "goal": "circles, squares and triangles in the workshop",
+      "formats": [
+        "count_and_discover"
+      ]
+    },
+    {
+      "id": "bedtime_routine",
+      "value": "responsibility",
+      "goal": "the steps before sleep",
+      "formats": [
+        "little_helpers"
+      ]
+    },
+    {
+      "id": "story_the_lost_map",
+      "value": "honesty",
+      "goal": "Beni loses the map and tells the truth",
+      "formats": [
+        "story_time"
+      ]
+    },
+    {
+      "id": "why_moon_changes",
+      "value": "curiosity",
+      "goal": "the moon looks different because we see more or less of its sunny side",
+      "formats": [
+        "why"
+      ]
+    },
+    {
+      "id": "why_ice_melts",
+      "value": "observing",
+      "goal": "ice turns to water when it gets warm; watch it change",
+      "formats": [
+        "why"
+      ]
+    },
+    {
+      "id": "why_plants_need_water",
+      "value": "caring_for_nature",
+      "goal": "plants drink through their roots; a dry plant droops",
+      "formats": [
+        "why",
+        "little_helpers"
+      ]
+    },
+    {
+      "id": "why_shadows_move",
+      "value": "observing",
+      "goal": "a shadow moves when the sun moves across the sky",
+      "formats": [
+        "why"
+      ]
+    },
+    {
+      "id": "why_we_sleep",
+      "value": "healthy_habits",
+      "goal": "sleep helps our bodies grow and our minds rest",
+      "formats": [
+        "why"
+      ]
+    },
+    {
+      "id": "why_wash_hands",
+      "value": "healthy_habits",
+      "goal": "soap washes away tiny germs we cannot see",
+      "formats": [
+        "why",
+        "sing_along"
+      ]
+    },
+    {
+      "id": "why_bubbles_round",
+      "value": "observing",
+      "goal": "a bubble pulls itself into a ball; try other wands and see",
+      "formats": [
+        "why"
+      ]
+    },
+    {
+      "id": "why_birds_build_nests",
+      "value": "caring_for_nature",
+      "goal": "birds build nests to keep eggs safe; we look but never touch",
+      "formats": [
+        "why"
+      ]
+    },
+    {
+      "id": "fix_leaky_bucket",
+      "value": "problem_solving",
+      "goal": "find the hole, try one fix, check, try a better one",
+      "formats": [
+        "lets_fix_it"
+      ]
+    },
+    {
+      "id": "fix_stuck_kite",
+      "value": "asking_for_help",
+      "goal": "when you cannot reach, ask a friend and plan together",
+      "formats": [
+        "lets_fix_it"
+      ]
+    },
+    {
+      "id": "fix_squeaky_gate",
+      "value": "problem_solving",
+      "goal": "listen for where the squeak is, then test one idea at a time",
+      "formats": [
+        "lets_fix_it"
+      ]
+    },
+    {
+      "id": "fix_broken_birdhouse",
+      "value": "trying_again",
+      "goal": "the first fix falls apart; change the plan and try again",
+      "formats": [
+        "lets_fix_it"
+      ]
+    },
+    {
+      "id": "fix_tangled_string",
+      "value": "patience",
+      "goal": "slow hands untangle faster than quick pulls",
+      "formats": [
+        "lets_fix_it"
+      ]
+    },
+    {
+      "id": "fix_flat_wheel",
+      "value": "cooperation",
+      "goal": "one holds, one pumps, one checks: a job for many hands",
+      "formats": [
+        "lets_fix_it"
+      ]
+    },
+    {
+      "id": "fix_blocked_stream",
+      "value": "caring_for_nature",
+      "goal": "clear the leaves so the water and the fish can move",
+      "formats": [
+        "lets_fix_it"
+      ]
+    },
+    {
+      "id": "song_kind_words",
+      "value": "kindness",
+      "goal": "kind words make friends feel warm: please, thank you, well done",
+      "formats": [
+        "sing_along"
+      ]
+    },
+    {
+      "id": "song_count_ducks",
+      "value": "counting",
+      "goal": "count ducks up to five and back down",
+      "formats": [
+        "sing_along",
+        "count_and_discover"
+      ]
+    },
+    {
+      "id": "song_body_parts",
+      "value": "body_awareness",
+      "goal": "name and move head, shoulders, knees and toes",
+      "formats": [
+        "sing_along"
+      ]
+    },
+    {
+      "id": "song_goodnight",
+      "value": "calming_down",
+      "goal": "a slow song to breathe and wind down after a busy day",
+      "formats": [
+        "sing_along"
+      ]
+    },
+    {
+      "id": "song_share_it",
+      "value": "sharing",
+      "goal": "taking turns means everyone gets to play",
+      "formats": [
+        "sing_along"
+      ]
+    },
+    {
+      "id": "song_rainbow_colours",
+      "value": "colours",
+      "goal": "sing the colours of the rainbow in order",
+      "formats": [
+        "sing_along"
+      ]
+    },
+    {
+      "id": "colours_in_the_garden",
+      "value": "colours",
+      "goal": "find and name red, yellow and blue things in the garden",
+      "formats": [
+        "count_and_discover"
+      ]
+    },
+    {
+      "id": "big_and_small",
+      "value": "comparing",
+      "goal": "line things up from small to big",
+      "formats": [
+        "count_and_discover"
+      ]
+    },
+    {
+      "id": "count_steps_to_the_hill",
+      "value": "counting",
+      "goal": "count steps and find out which path is shorter",
+      "formats": [
+        "count_and_discover"
+      ]
+    },
+    {
+      "id": "patterns_on_the_path",
+      "value": "patterns",
+      "goal": "spot a pattern and guess what comes next",
+      "formats": [
+        "count_and_discover"
+      ]
+    },
+    {
+      "id": "sort_the_buttons",
+      "value": "sorting",
+      "goal": "sort by colour, then by size, then by holes",
+      "formats": [
+        "count_and_discover"
+      ]
+    },
+    {
+      "id": "more_or_fewer",
+      "value": "comparing",
+      "goal": "which pile has more? count to be sure",
+      "formats": [
+        "count_and_discover"
+      ]
+    },
+    {
+      "id": "set_the_table",
+      "value": "helping",
+      "goal": "one plate, one cup, one spoon for each friend",
+      "formats": [
+        "little_helpers",
+        "count_and_discover"
+      ]
+    },
+    {
+      "id": "feed_the_pet",
+      "value": "responsibility",
+      "goal": "a pet needs food and water every day, not only when we remember",
+      "formats": [
+        "little_helpers"
+      ]
+    },
+    {
+      "id": "help_carry_the_basket",
+      "value": "helping",
+      "goal": "a heavy job is lighter with two",
+      "formats": [
+        "little_helpers"
+      ]
+    },
+    {
+      "id": "sort_the_recycling",
+      "value": "caring_for_nature",
+      "goal": "paper here, bottles there: what goes where",
+      "formats": [
+        "little_helpers"
+      ]
+    },
+    {
+      "id": "pack_for_the_picnic",
+      "value": "planning",
+      "goal": "make a list, pack it, check it",
+      "formats": [
+        "little_helpers"
+      ]
+    },
+    {
+      "id": "story_the_tall_slide",
+      "value": "courage",
+      "goal": "feeling scared is fine; go at your own pace with a friend near",
+      "formats": [
+        "story_time"
+      ]
+    },
+    {
+      "id": "story_the_sharing_tree",
+      "value": "sharing",
+      "goal": "a tree with too many apples for one: share them",
+      "formats": [
+        "story_time"
+      ]
+    },
+    {
+      "id": "story_the_quiet_friend",
+      "value": "inclusion",
+      "goal": "notice the friend who is not playing and invite them",
+      "formats": [
+        "story_time"
+      ]
+    },
+    {
+      "id": "story_the_broken_cup",
+      "value": "apologizing",
+      "goal": "say sorry, help put it right, and be forgiven",
+      "formats": [
+        "story_time"
+      ]
+    },
+    {
+      "id": "story_the_long_wait",
+      "value": "patience",
+      "goal": "waiting is easier when you do something while you wait",
+      "formats": [
+        "story_time"
+      ]
+    },
+    {
+      "id": "story_the_new_neighbour",
+      "value": "kindness",
+      "goal": "welcome someone new and show them around",
+      "formats": [
+        "story_time"
+      ]
+    },
+    {
+      "id": "story_the_promise",
+      "value": "keeping_promises",
+      "goal": "a promise is a plan you keep even when it is hard",
+      "formats": [
+        "story_time"
+      ]
+    },
+    {
+      "id": "feel_nervous_showing_song",
+      "value": "courage",
+      "goal": "nervous before showing a song to friends; breathe and start small",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_bored_rainy_day",
+      "value": "creativity",
+      "goal": "bored inside on a rainy day; turn boxes into a new game",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_left_out_game",
+      "value": "inclusion",
+      "goal": "left out of a game; say it, and the friends make room",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_too_loud",
+      "value": "calming_down",
+      "goal": "too much noise feels like too much; find a quiet corner and breathe",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_confused_new_rules",
+      "value": "asking_questions",
+      "goal": "not understanding a game is fine; ask 'how does it work?'",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_brave_climbing_frame",
+      "value": "courage",
+      "goal": "scared at the top of the climbing frame; one step at a time",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_hurt_by_words",
+      "value": "kindness",
+      "goal": "an unkind word hurts; say how it felt, and choose kind words",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_missing_home",
+      "value": "naming_feelings",
+      "goal": "missing home on a sleepover at a friend's house; say it and hug",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_silly_giggles",
+      "value": "joy",
+      "goal": "silly giggles are fun; notice when a friend wants to stop",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_caring_sick_friend",
+      "value": "empathy",
+      "goal": "a friend has a cold; make a card and visit gently",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_forgiving_friend",
+      "value": "forgiveness",
+      "goal": "a friend says sorry; decide to forgive and play again",
+      "formats": [
+        "feelings_day"
+      ]
+    },
+    {
+      "id": "feel_losing_a_game",
+      "value": "good_sport",
+      "goal": "losing feels bad; say 'good game' and play another round",
+      "formats": [
+        "feelings_day"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "id": "ch_02",
+  "name": "Beni",
+  "pronunciation": "BEH-nee",
+  "group": "core",
+  "archetype": "the_careful_one",
+  "role": "the voice of safety inside the story: what if?",
+  "age_apparent": 6,
+  "domain": "maps_directions_and_order",
+  "lead_stage": "caution",
+  "visual": {
+    "silhouette": "tall_thin",
+    "head_body_ratio": "1:2.8",
+    "primary_color": "#3E7BBF",
+    "hair": {
+      "style": "flat_neat",
+      "color": "#2B1B12"
+    },
+    "skin": "#C98E5E",
+    "outfit_fixed": {
+      "top": "blue_shirt_big_pocket",
+      "shoes": "brown_shoes"
+    },
+    "signature": "folded_map_before_every_step",
+    "palette": [
+      "#3E7BBF",
+      "#7A4E2D",
+      "#C98E5E",
+      "#F4E3B5",
+      "#2B1B12"
+    ],
+    "symmetric": true
+  },
+  "personality": {
+    "traits": [
+      "careful",
+      "thoughtful",
+      "kind"
+    ],
+    "speech": {
+      "sentence_words": [
+        8,
+        10
+      ],
+      "vocabulary_grade": 1,
+      "tone": "calm",
+      "style": "starts_with_but",
+      "catchphrase": {
+        "en": "Wait… let's think.",
+        "es": "Espera… pensemos."
+      }
+    },
+    "never_does": [
+      "mocking_someone_scared",
+      "forbidding_without_explaining"
+    ]
+  },
+  "relationships": {
+    "ch_01": "best_friend",
+    "ch_06": "trusts",
+    "pet_02": "companion"
+  },
+  "voice": {
+    "parler_description": "A young boy speaks calmly and thoughtfully in a medium-pitched voice, slow pace with small pauses, very clear recording.",
+    "pitch_semitones": 2,
+    "pace": "slow",
+    "exaggeration": 0.35,
+    "cfg_weight": 0.6,
+    "refs": {
+      "en": "assets/voices/en/beni.wav",
+      "es": "assets/voices/es/beni.wav"
+    },
+    "recipe": "assets/voice-recipes/beni.json"
+  },
+  "motion_style": {
+    "speed": 0.95,
+    "bounce": 0.9
+  },
+  "assets": {
+    "rig": "assets/rigs/ch_02/rig.json",
+    "mouths": "assets/rigs/ch_02/mouth/",
+    "turnaround": "assets/refs/ch_02/",
+    "lora": "assets/loras/beni_v2.safetensors"
+  }
+}

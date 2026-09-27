@@ -1,0 +1,85 @@
+{
+  "id": "ch_06",
+  "name": "Nilo",
+  "pronunciation": "NEE-lo",
+  "group": "core",
+  "archetype": "the_quiet_observer",
+  "role": "the oldest and quietest; says the line that solves the knot",
+  "age_apparent": 7,
+  "domain": "details_numbers_and_observation",
+  "lead_stage": "discovery",
+  "visual": {
+    "silhouette": "straight_upright",
+    "head_body_ratio": "1:3.0",
+    "primary_color": "#7B5BB5",
+    "hair": {
+      "style": "neat_side_part",
+      "color": "#141414"
+    },
+    "skin": "#6E4630",
+    "outfit_fixed": {
+      "top": "purple_buttoned_jacket",
+      "shoes": "grey_boots"
+    },
+    "signature": "magnifying_glass_on_a_neck_cord",
+    "palette": [
+      "#7B5BB5",
+      "#D8CCEB",
+      "#6E4630",
+      "#B8C4CC",
+      "#141414"
+    ],
+    "symmetric": false
+  },
+  "personality": {
+    "traits": [
+      "observant",
+      "patient",
+      "modest"
+    ],
+    "speech": {
+      "sentence_words": [
+        4,
+        7
+      ],
+      "vocabulary_grade": 1,
+      "tone": "deep",
+      "style": "pause_before_speaking",
+      "catchphrase": {
+        "en": "Look… right here.",
+        "es": "Fíjate… justo aquí."
+      }
+    },
+    "never_does": [
+      "showing_off",
+      "solving_it_before_others_try"
+    ]
+  },
+  "relationships": {
+    "ch_01": "mentors",
+    "ch_02": "trusts",
+    "pet_06": "companion"
+  },
+  "voice": {
+    "parler_description": "A boy speaks in a deep, calm, clear voice, slow and deliberate, very clear recording.",
+    "pitch_semitones": 0,
+    "pace": "slow",
+    "exaggeration": 0.3,
+    "cfg_weight": 0.6,
+    "refs": {
+      "en": "assets/voices/en/nilo.wav",
+      "es": "assets/voices/es/nilo.wav"
+    },
+    "recipe": "assets/voice-recipes/nilo.json"
+  },
+  "motion_style": {
+    "speed": 0.8,
+    "bounce": 0.8
+  },
+  "assets": {
+    "rig": "assets/rigs/ch_06/rig.json",
+    "mouths": "assets/rigs/ch_06/mouth/",
+    "turnaround": "assets/refs/ch_06/",
+    "lora": "assets/loras/nilo_v2.safetensors"
+  }
+}

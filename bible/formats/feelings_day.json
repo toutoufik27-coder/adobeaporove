@@ -1,0 +1,46 @@
+{
+  "id": "feelings_day",
+  "name": "Feelings Day",
+  "content": "name one feeling and how to act with it (the launch format)",
+  "duration_s": 360,
+  "quota": 0.2,
+  "launch_month": 0,
+  "template": [
+    {
+      "id": "opener",
+      "start_s": 0,
+      "end_s": 20,
+      "purpose": "fixed theme + the hook question"
+    },
+    {
+      "id": "setup",
+      "start_s": 20,
+      "end_s": 75,
+      "purpose": "an ordinary day in a familiar place, then the problem appears"
+    },
+    {
+      "id": "first_try",
+      "start_s": 75,
+      "end_s": 175,
+      "purpose": "the first try fails: failing is normal and is not stopping"
+    },
+    {
+      "id": "help",
+      "start_s": 175,
+      "end_s": 275,
+      "purpose": "asking for help, working together, the discovery"
+    },
+    {
+      "id": "solution",
+      "start_s": 275,
+      "end_s": 335,
+      "purpose": "the solution: the lesson is seen, not only said"
+    },
+    {
+      "id": "recap",
+      "start_s": 335,
+      "end_s": 360,
+      "purpose": "sung recap + 'and you, what would you do?'"
+    }
+  ]
+}

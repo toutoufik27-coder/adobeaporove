@@ -1,0 +1,46 @@
+{
+  "id": "count_and_discover",
+  "name": "Count and Discover",
+  "content": "numbers, shapes, colours, sorting",
+  "duration_s": 300,
+  "quota": 0.1,
+  "launch_month": 5,
+  "template": [
+    {
+      "id": "opener",
+      "start_s": 0,
+      "end_s": 20,
+      "purpose": "fixed theme + the hook question"
+    },
+    {
+      "id": "setup",
+      "start_s": 20,
+      "end_s": 60,
+      "purpose": "an ordinary day in a familiar place, then the problem appears"
+    },
+    {
+      "id": "first_try",
+      "start_s": 60,
+      "end_s": 130,
+      "purpose": "the first try fails: failing is normal and is not stopping"
+    },
+    {
+      "id": "help",
+      "start_s": 130,
+      "end_s": 210,
+      "purpose": "asking for help, working together, the discovery"
+    },
+    {
+      "id": "solution",
+      "start_s": 210,
+      "end_s": 270,
+      "purpose": "the solution: the lesson is seen, not only said"
+    },
+    {
+      "id": "recap",
+      "start_s": 270,
+      "end_s": 300,
+      "purpose": "sung recap + 'and you, what would you do?'"
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "id": "ch_01",
+  "name": "Kiko",
+  "pronunciation": "KEE-ko",
+  "group": "core",
+  "archetype": "the_curious_one",
+  "role": "asks the question that starts the episode",
+  "age_apparent": 5,
+  "domain": "nature_and_animals",
+  "lead_stage": "question",
+  "visual": {
+    "silhouette": "round_full",
+    "head_body_ratio": "1:2.4",
+    "primary_color": "#F2C230",
+    "hair": {
+      "style": "short_curly_up",
+      "color": "#4A2E1F"
+    },
+    "skin": "#E8B88A",
+    "outfit_fixed": {
+      "top": "yellow_overall",
+      "shoes": "red_sneakers"
+    },
+    "signature": "explorer_backpack_always_worn",
+    "palette": [
+      "#F2C230",
+      "#3E7BBF",
+      "#E8B88A",
+      "#C9452F",
+      "#4A2E1F"
+    ],
+    "symmetric": true
+  },
+  "personality": {
+    "traits": [
+      "curious",
+      "brave",
+      "asks_many_questions"
+    ],
+    "speech": {
+      "sentence_words": [
+        6,
+        8
+      ],
+      "vocabulary_grade": 1,
+      "tone": "bright",
+      "style": "ends_with_question",
+      "catchphrase": {
+        "en": "Let's find out!",
+        "es": "¡Vamos a descubrirlo!"
+      }
+    },
+    "never_does": [
+      "lying",
+      "excluding_others",
+      "giving_up_angrily"
+    ]
+  },
+  "relationships": {
+    "ch_02": "best_friend",
+    "ch_06": "looks_up_to",
+    "pet_01": "companion"
+  },
+  "voice": {
+    "parler_description": "A young girl speaks in a bright, excited, high-pitched voice at a fast pace, very clear recording, no background noise.",
+    "pitch_semitones": 3,
+    "pace": "fast",
+    "exaggeration": 0.7,
+    "cfg_weight": 0.4,
+    "refs": {
+      "en": "assets/voices/en/kiko.wav",
+      "es": "assets/voices/es/kiko.wav"
+    },
+    "recipe": "assets/voice-recipes/kiko.json"
+  },
+  "motion_style": {
+    "speed": 1.15,
+    "bounce": 1.2
+  },
+  "assets": {
+    "rig": "assets/rigs/ch_01/rig.json",
+    "mouths": "assets/rigs/ch_01/mouth/",
+    "turnaround": "assets/refs/ch_01/",
+    "lora": "assets/loras/kiko_v2.safetensors"
+  }
+}
